@@ -1,0 +1,6 @@
+[
+  { "question": "What was the August electricity bill amount?", "expect": "1,840", "file": "electricity_aug" },
+  { "question": "When is the August electricity bill due?", "expect": "15", "file": "electricity_aug" },
+  { "question": "Who prescribed the medicine?", "expect": "Rao", "file": "prescription" },
+  { "question": "What is the capital of Mars?", "expect": null, "file": null }
+]

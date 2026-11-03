@@ -1,0 +1,33 @@
+name: kaagaz
+description: Stores your documents, sorts them automatically, and finds them by name or question, with citations.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  sqflite: ^2.3.3
+  path_provider: ^2.1.3
+  path: ^1.9.0
+  file_picker: ^8.0.6
+  google_mlkit_text_recognition: ^0.13.0
+  syncfusion_flutter_pdf: ^26.1.40
+  pdfx: ^2.6.0
+  http: ^1.2.1
+  connectivity_plus: ^6.0.3
+  flutter_local_notifications: ^17.2.1
+  timezone: ^0.9.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/rules.json
+    - assets/eval_qa.json

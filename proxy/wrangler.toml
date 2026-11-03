@@ -1,0 +1,35 @@
+# Kaagaz proxy (Cloudflare Worker). Deploy steps are in proxy/README.md.
+name = "kaagaz-proxy"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+[vars]
+LLM_MODEL = "gemma-4-31b-it"
+EMBED_MODEL = "gemini-embedding-001"
+# The Android app's WebView origin, and the Vite dev server.
+ALLOWED_ORIGINS = "https://localhost,http://localhost:5173"
+
+# Play Integrity: "required" lets only the genuine app from Google Play register (see README). Off by default.
+PLAY_INTEGRITY = "off"
+PLAY_PACKAGE_NAME = "app.kaagaz"
+
+# Secrets (never in this file): GEMINI_API_KEY, TOKEN_SECRET, and for Play Integrity GOOGLE_SERVICE_ACCOUNT.
+# Set with `npx wrangler secret put <NAME>`.
+
+# New installs per IP address.
+[[ratelimits]]
+name = "REGISTER_LIMITER"
+namespace_id = "1001"
+simple = { limit = 5, period = 60 }
+
+# Gemma calls per device: sorting, answers, naming, OCR fallback.
+[[ratelimits]]
+name = "GENERATE_LIMITER"
+namespace_id = "1002"
+simple = { limit = 20, period = 60 }
+
+# Embedding calls per device. One per text chunk, so higher while a big import is indexed.
+[[ratelimits]]
+name = "EMBED_LIMITER"
+namespace_id = "1003"
+simple = { limit = 120, period = 60 }
