@@ -1,14 +1,15 @@
 # Kaagaz proxy
 
-A Cloudflare Worker that holds the Gemini API key, so the app never contains it. The app calls three endpoints:
+A Cloudflare Worker that holds the Gemini API key, so the app never contains it. The app calls four endpoints:
 
 | Endpoint | Body | Returns | Limit |
 |---|---|---|---|
 | `POST /v1/register` | none | `{ token }` | 5 per minute per IP |
 | `POST /v1/generate` | `{ parts }`: text, plus at most one image | `{ text }` | 20 per minute per device |
 | `POST /v1/embed` | `{ text }` | `{ values }` | 120 per minute per device |
+| `POST /v1/transcribe` | `{ audio }`: one recording (MP3, M4A, WAV, AAC, OGG), at most 8 MB | `{ text }` | 6 per minute per device |
 
-Each install registers once and keeps an anonymous token in Android secure storage. Tokens are signed with `TOKEN_SECRET`, so the Worker needs no database. The Worker chooses the model and drops anything else the client sends, so a token can only make these three calls.
+Each install registers once and keeps an anonymous token in Android secure storage. Tokens are signed with `TOKEN_SECRET`, so the Worker needs no database. The Worker chooses the model and drops anything else the client sends, so a token can only make these four calls. Transcription has a fixed prompt on the server, so that route cannot be used as a general model.
 
 ## Deploy
 
@@ -82,7 +83,7 @@ For users' personal documents, use a key from a project with billing enabled (pa
 ## Operations
 
 - **Revoke every token:** run `npx wrangler secret put TOKEN_SECRET` with a new value. Apps re-register on their next call without the user noticing.
-- **Change the model:** edit `LLM_MODEL` or `EMBED_MODEL` in `wrangler.toml` and redeploy. No app update is needed.
+- **Change the model:** edit `LLM_MODEL`, `EMBED_MODEL` or `TRANSCRIBE_MODEL` in `wrangler.toml` and redeploy. No app update is needed. `TRANSCRIBE_MODEL` must accept audio input; the hosted Gemma 4 31B does not, so it defaults to `gemini-2.5-flash`. Check that the model is still offered in your Gemini API project before deploying.
 - **Logs:** run `npx wrangler tail`. Upstream errors are logged here and never sent to the app.
 - **Local run:** copy `.dev.vars.example` to `.dev.vars`, run `npm run dev`, and set `VITE_PROXY_URL=http://localhost:8787` in the app.
 

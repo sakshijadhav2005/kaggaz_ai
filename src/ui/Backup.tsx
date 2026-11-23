@@ -64,7 +64,7 @@ export default function BackupPanel() {
   const tooShort = password.length < MIN_PASSWORD;
 
   return (
-    <section className="lock-settings">
+    <section className="panel">
       <h2>{s.backup.title}</h2>
       <p className="hint">{s.backup.intro}</p>
 

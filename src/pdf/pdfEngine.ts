@@ -1,4 +1,4 @@
-import { PdfOpError } from './pdfErrors';
+import { isPdfErrorCode, PdfOpError, type PdfErrorCode } from './pdfErrors';
 import type { OPS } from './pdfDispatch';
 
 /*
@@ -12,7 +12,9 @@ type Args<K extends OpName> = Parameters<(typeof OPS)[K]>;
 type Result<K extends OpName> = Awaited<ReturnType<(typeof OPS)[K]>>;
 
 export interface Request { id: number; op: OpName; args: unknown[] }
-export type Reply = { id: number; ok: true; result: unknown } | { id: number; ok: false; error: string; userFacing: boolean };
+export type Reply =
+  | { id: number; ok: true; result: unknown }
+  | { id: number; ok: false; error: string; userFacing: boolean; code?: PdfErrorCode; params?: unknown[] };
 
 /** Every ArrayBuffer inside [v], for the transfer list. */
 export function buffers(v: unknown, out: Set<ArrayBuffer> = new Set()): ArrayBuffer[] {
@@ -39,6 +41,15 @@ export interface WorkerLike {
   terminate(): void;
 }
 
+/** Rebuilds the worker's error on this side: a coded PdfOpError when it has a known code, else a plain Error. */
+function toError(r: Extract<Reply, { ok: false }>): Error {
+  if (r.userFacing && isPdfErrorCode(r.code)) {
+    // The params came from a PdfOpError with this code, so they fit its constructor.
+    return new (PdfOpError as new (code: PdfErrorCode, ...p: unknown[]) => PdfOpError)(r.code, ...(r.params ?? []));
+  }
+  return new Error(r.error);
+}
+
 export class PdfEngine {
   private worker: WorkerLike | null = null;
   private nextId = 1;
@@ -54,11 +65,11 @@ export class PdfEngine {
       if (!p) return;
       this.pending.delete(e.data.id);
       if (e.data.ok) p.resolve(e.data.result);
-      else p.reject(e.data.userFacing ? new PdfOpError(e.data.error) : new Error(e.data.error));
+      else p.reject(toError(e.data));
     });
     w.addEventListener('error', (e: ErrorEvent) => {
       // A crashed worker (e.g. out of memory) fails everything in flight; the next call starts a new one.
-      const err = new Error(`The PDF worker stopped: ${e.message || 'unknown error'}`);
+      const err = new PdfOpError('workerStopped', e.message || 'unknown error');
       this.pending.forEach((p) => p.reject(err));
       this.pending.clear();
       this.worker?.terminate();

@@ -58,6 +58,17 @@ describe('language switch', () => {
     expect(again.strings().tabs.library).toBe('Library');
   });
 
+  it('shows PDF tool errors in the chosen language', async () => {
+    const i18n = await import('../src/i18n');
+    const { PdfOpError } = await import('../src/pdf/pdfErrors');
+    const err = new PdfOpError('locked', 'PAN.pdf');
+    i18n.setLang('hi');
+    expect(i18n.errorText(err)).toBe('"PAN.pdf" लॉक है। टूल में इस्तेमाल करने से पहले इसे अनलॉक करें।');
+    i18n.setLang('en');
+    expect(i18n.errorText(err)).toBe('"PAN.pdf" is locked. Unlock it first to use it in a tool.');
+    expect(i18n.errorText(new Error('plain'))).toBe('plain');
+  });
+
   it('answers in Hindi when the app is in Hindi', async () => {
     const deps: ContentSearchDeps = {
       online: false,

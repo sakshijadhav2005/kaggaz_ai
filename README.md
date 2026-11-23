@@ -20,7 +20,7 @@ npx cap open android # then Run from Android Studio
 
 Online calls go through the **Kaagaz proxy** (`proxy/`, a Cloudflare Worker), which holds the Gemini API key, so the app never contains it. Deploy it (see `proxy/README.md`), then set `VITE_PROXY_URL` in `.env.local` before building. Each install gets an anonymous token by itself; there is nothing to enter.
 
-For development without the proxy, leave `VITE_PROXY_URL` unset and paste a Gemini API key in Settings, or set `VITE_GEMINI_API_KEY` in `.env.local`. Never ship such a build: the key would be readable from the APK. `VITE_LLM_MODEL` and `VITE_EMBED_MODEL` apply to development mode only; with the proxy, the models are set in `proxy/wrangler.toml`.
+For development without the proxy, leave `VITE_PROXY_URL` unset and paste a Gemini API key in Settings, or set `VITE_GEMINI_API_KEY` in `.env.local`. Never ship such a build: the key would be readable from the APK. `VITE_LLM_MODEL`, `VITE_EMBED_MODEL` and `VITE_TRANSCRIBE_MODEL` apply to development mode only; with the proxy, the models are set in `proxy/wrangler.toml`.
 
 Without a key the app still imports, OCRs, sorts by rules and searches by folder or keyword. Answers, Gemma sorting and embeddings need the key and a connection.
 
@@ -30,7 +30,7 @@ Without a key the app still imports, OCRs, sorts by rules and searches by folder
 |---|---|
 | Interfaces, data shapes | `src/interfaces.ts`, `src/models.ts` |
 | Vault, DB | `src/core/vault.ts` (Capacitor Filesystem), `src/core/db.ts` (IndexedDB via Dexie) |
-| Extract | `src/extract/` (pdf.js text layer, Tesseract OCR English + Hindi, Gemma image fallback) |
+| Extract | `src/extract/` (pdf.js text layer, Tesseract OCR English + Hindi, Gemma image fallback, audio transcription) |
 | Smart sort | `src/sort/`, rules in `src/sort/rules.json` |
 | Folder/keyword search | `src/search/folderSearch.ts` |
 | Index and answers | `src/index/`, `src/answer/answerer.ts` |
@@ -45,7 +45,11 @@ Without a key the app still imports, OCRs, sorts by rules and searches by folder
 - **OCR:** on a phone it uses ML Kit text recognition (Latin and Devanagari, works offline). In a browser, and as a backup if ML Kit fails, it uses Tesseract.js, whose language data downloads the first time it runs. If both read poorly and you are online, Gemma transcribes the image.
 - ML Kit adds several MB to the Android app, one model per script.
 - HEIC photos may not decode in every WebView. JPEG and PNG are safe.
-- Audio files import and are sorted by file name only; transcription is deferred, as in the spec.
+- **Audio:** imported recordings (MP3, M4A, WAV, AAC, OGG) are turned into text, then sorted, searched and answered from like any document (`src/extract/audioExtractor.ts`).
+  - Online only, with consent: the on-device Gemma 4 takes no audio. Offline, or for a locked file, nothing is sent and the file is sorted by its name; Retry in the viewer transcribes it later.
+  - The hosted Gemma 4 31B takes no audio either, so transcription uses its own model: `TRANSCRIBE_MODEL` on the proxy (`gemini-2.5-flash` by default), or `VITE_TRANSCRIBE_MODEL` in development.
+  - Recordings over 8 MB (about 8 minutes of 128 kbps MP3) are not sent and are sorted by name.
+  - The whole recording is one passage, so answers cite the file, not a time in it.
 - **Older WebViews:** the Android app runs in the system WebView, which on some phones is a year or more behind Chrome. `src/polyfills.ts` adds the JavaScript features pdf.js needs (`Promise.withResolvers`, `Object.groupBy`, stream iteration, ...) and loads both in the page and in the pdf.js worker. Without it the app starts but PDFs yield no text. Tested on Android 13 with WebView 103.
 - `legacy-flutter/` holds the earlier Dart version. It was never compiled and can be deleted.
 
@@ -55,7 +59,7 @@ Online, the app uses the hosted Gemma 4 (31B). With no connection or key, or if 
 
 - Android app, Settings, **Download Gemma 4 E2B**. The model is about 2.6 GB, so it downloads on request (use Wi-Fi) instead of shipping inside the app.
 - Offline answers work from the best matching passages (plain word matching), because the embedding model is online-only. Answers cite the file and page. The on-device model has a small context window, so it is given at most 3 passages.
-- It cannot read images; the OCR fallback that sends a picture to Gemma stays online-only. ML Kit and Tesseract still read images offline.
+- It cannot read images or audio; the OCR fallback that sends a picture to Gemma, and audio transcription, stay online-only. ML Kit and Tesseract still read images offline.
 - In a browser there is no on-device model; Settings says so.
 
 ## Security
@@ -76,7 +80,7 @@ Online, the app uses the hosted Gemma 4 (31B). With no connection or key, or if 
 - **Consent for online AI (DPDP Act):** nothing goes to the cloud until the user agrees to the notice (`src/core/consent.ts`). They are asked once after unlock, and can turn it on or off in Settings, Online AI.
   - The check is in `src/llm/gemini.ts`, where every request leaves the phone, so no feature can skip it.
   - Without consent everything runs on the phone: rule sorting, word search, offline Gemma 4.
-  - Changing the notice means bumping `CLOUD_NOTICE_VERSION`, and everyone is asked again.
+  - Changing the notice means bumping `CLOUD_NOTICE_VERSION`, and everyone is asked again. Version 2 added audio recordings to what is sent.
   - Each answer is written to a hash-chained audit log (`Db.appendAudit`). Settings shows it with an integrity check.
 - **Play Integrity (optional):** with it on, only the genuine app from Google Play on a real device can get a proxy token (`IntegrityPlugin.java`, `proxy/src/integrity.ts`). Setup: `proxy/README.md`.
 - **No API key in the app:** release builds call the Kaagaz proxy with a per-install token kept in secure storage. The proxy fixes the model, caps request sizes and rate-limits each device.
@@ -88,7 +92,7 @@ Online, the app uses the hosted Gemma 4 (31B). With no connection or key, or if 
   - `hi.ts` must have exactly the keys of `en.ts`, or the build fails.
   - A test fails if a Hindi string is missing or still English.
 - **Answers:** online and offline Gemma reply in the language of the question.
-- **Still English:** PDF tool errors raised inside the worker (for example a bad page range). The worker cannot see the app's language setting.
+- **PDF tool errors:** the worker cannot see the app's language, so each error crosses as a code and its parameters (`src/pdf/pdfErrors.ts`) and the screen shows it in Hindi or English. The assistant's model sees the English text and replies in the user's language.
 
 ## Voice
 

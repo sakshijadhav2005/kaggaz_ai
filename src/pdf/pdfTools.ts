@@ -40,9 +40,9 @@ export class PdfTools {
     const files: StoredFile[] = [];
     for (const id of ids) {
       const f = await this.d.getFile(id);
-      if (!f || f.deletedAt) throw new PdfOpError(`No document with id ${id}.`);
-      if (f.locked) throw new PdfOpError(`"${f.name}" is locked. Unlock it first to use it in a tool.`);
-      if (f.type !== kind) throw new PdfOpError(`"${f.name}" is not ${kind === 'pdf' ? 'a PDF' : 'an image'}.`);
+      if (!f || f.deletedAt) throw new PdfOpError('noDocument', id);
+      if (f.locked) throw new PdfOpError('locked', f.name);
+      if (f.type !== kind) throw (kind === 'pdf' ? new PdfOpError('notPdfDoc', f.name) : new PdfOpError('notImageDoc', f.name));
       files.push(f);
     }
     return files;
@@ -50,7 +50,7 @@ export class PdfTools {
 
   private async bytes(files: StoredFile[]): Promise<Uint8Array[]> {
     const blobs = await Promise.all(files.map((f) => this.d.read(f)));
-    if (blobs.reduce((s, b) => s + b.size, 0) > MAX_INPUT_BYTES) throw new PdfOpError('These files are too large to process on the phone (over 80 MB together).');
+    if (blobs.reduce((s, b) => s + b.size, 0) > MAX_INPUT_BYTES) throw new PdfOpError('filesTooLarge');
     return Promise.all(blobs.map(async (b) => new Uint8Array(await b.arrayBuffer())));
   }
 
@@ -111,7 +111,7 @@ export class PdfTools {
 
   async watermark(id: string, text: string): Promise<StoredFile[]> {
     const t = text.trim();
-    if (!t) throw new PdfOpError('Type the watermark text.');
+    if (!t) throw new PdfOpError('watermarkEmpty');
     const { file, bytes } = await this.one(id);
     // Latin text is drawn as real PDF text; anything else as an image the WebView rendered.
     const out = LATIN.test(t) ? await this.d.engine.run('watermark', bytes, t) : await this.d.engine.run('watermarkImage', bytes, await this.d.textImage(t));
@@ -131,9 +131,9 @@ export class PdfTools {
   async compress(id: string, level: CompressLevel = 'balanced'): Promise<StoredFile[]> {
     const [file] = await this.need([id], 'pdf');
     const blob = await this.d.read(file);
-    if (blob.size > MAX_INPUT_BYTES) throw new PdfOpError('This file is too large to compress on the phone (over 80 MB).');
+    if (blob.size > MAX_INPUT_BYTES) throw new PdfOpError('fileTooLarge');
     const out = await this.d.engine.run('imagesToPdf', await this.d.rasterize(blob, level));
-    if (out.byteLength >= blob.size * 0.95) throw new PdfOpError(`"${file.name}" is already about as small as it can get.`);
+    if (out.byteLength >= blob.size * 0.95) throw new PdfOpError('alreadySmall', file.name);
     return this.save([{ bytes: out, name: pdfName(`${stemOf(file)} - compressed`) }], [file]);
   }
 
@@ -141,7 +141,7 @@ export class PdfTools {
   async imagesToPdf(ids: string[], name?: string): Promise<StoredFile[]> {
     const files = await this.need(ids, 'image');
     const blobs = await Promise.all(files.map((f) => this.d.read(f)));
-    if (blobs.reduce((s, b) => s + b.size, 0) > MAX_INPUT_BYTES) throw new PdfOpError('These images are too large together (over 80 MB).');
+    if (blobs.reduce((s, b) => s + b.size, 0) > MAX_INPUT_BYTES) throw new PdfOpError('imagesTooLarge');
     const images: PdfImage[] = [];
     for (const b of blobs) images.push(await this.d.toEmbeddable(b));
     const out = await this.d.engine.run('imagesToPdf', images);

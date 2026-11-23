@@ -8,7 +8,8 @@
  */
 
 /** Bump when the notice text (src/i18n, consent.points) changes in substance, in any language. */
-export const CLOUD_NOTICE_VERSION = 1;
+/** 2: audio recordings are sent for transcription. */
+export const CLOUD_NOTICE_VERSION = 2;
 
 /*
  * The notice text itself is in src/i18n (consent.*), in English and Hindi. The audit record keeps the version

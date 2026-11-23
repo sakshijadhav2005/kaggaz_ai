@@ -72,7 +72,7 @@ export async function toEmbeddable(image: Blob): Promise<PdfImage> {
   try {
     bitmap = await createImageBitmap(image);
   } catch {
-    throw new PdfOpError('This image format cannot be read on this phone. Use JPEG or PNG.');
+    throw new PdfOpError('imageFormat');
   }
   const canvas = document.createElement('canvas');
   canvas.width = bitmap.width;

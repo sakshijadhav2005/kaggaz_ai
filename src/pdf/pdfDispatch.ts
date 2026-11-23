@@ -25,7 +25,9 @@ export async function handleRequest(req: Request): Promise<{ reply: Reply; trans
     const result = await fn(...req.args);
     return { reply: { id: req.id, ok: true, result }, transfer: buffers(result) };
   } catch (e) {
-    const userFacing = e instanceof PdfOpError;
-    return { reply: { id: req.id, ok: false, error: e instanceof Error ? e.message : String(e), userFacing }, transfer: [] };
+    const error = e instanceof Error ? e.message : String(e);
+    // A user-facing error crosses as its code and parameters, so the main thread can show it in the user's language.
+    const coded = e instanceof PdfOpError ? { code: e.code, params: e.params as unknown[] } : {};
+    return { reply: { id: req.id, ok: false, error, userFacing: e instanceof PdfOpError, ...coded }, transfer: [] };
   }
 }

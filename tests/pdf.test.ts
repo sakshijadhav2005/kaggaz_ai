@@ -1,6 +1,8 @@
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 
+import { hi } from '../src/i18n/hi';
+
 import type { StoredFile } from '../src/models';
 import { handleRequest } from '../src/pdf/pdfDispatch';
 import { PdfEngine, type Reply, type Request, type WorkerLike } from '../src/pdf/pdfEngine';
@@ -119,6 +121,16 @@ describe('worker engine', () => {
   it('keeps user-facing errors as PdfOpError', async () => {
     const engine = new PdfEngine(fakeWorker);
     await expect(engine.run('extractPages', await makePdf(2), '9')).rejects.toBeInstanceOf(ops.PdfOpError);
+  });
+
+  it('carries the error code and parameters across the worker, for translation', async () => {
+    const engine = new PdfEngine(fakeWorker);
+    const err = await engine.run('extractPages', await makePdf(2), '9').catch((e) => e);
+    expect(err).toBeInstanceOf(ops.PdfOpError);
+    expect(err.code).toBe('outOfRange');
+    expect(err.params).toEqual(['9', 2]);
+    expect(err.message).toBe('Pages 9 are outside 1-2.');
+    expect(err.textIn(hi.pdfErrors)).toBe('पेज 9, 1-2 के बाहर हैं।');
   });
 });
 

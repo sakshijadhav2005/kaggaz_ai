@@ -33,7 +33,7 @@ export default function LockSettingsPanel() {
   };
 
   return (
-    <section className="lock-settings">
+    <section className="panel">
       <h2>{s.lock.title}</h2>
       <IonToggle
         checked={settings.enabled}

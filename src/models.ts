@@ -65,11 +65,11 @@ export interface StoredFile {
 
 export interface ExtractedSegment {
   page?: number; // PDF and images
-  startMs?: number; // audio (later)
+  startMs?: number; // audio: where the passage starts (0: the whole recording is one passage)
   text: string;
   language: string; // 'en', 'hi', ...
   confidence: number;
-  method: 'pdf_text' | 'ocr_device' | 'ocr_gemma' | 'manual';
+  method: 'pdf_text' | 'ocr_device' | 'ocr_gemma' | 'audio_transcript' | 'manual';
 }
 
 export const fullText = (segments: ExtractedSegment[]) =>

@@ -1,7 +1,7 @@
 import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin';
 
 import { CloudConsentError, cloudConsent } from '../core/consent';
-import type { EmbeddingProvider, LlmClient } from '../interfaces';
+import type { EmbeddingProvider, LlmClient, Transcriber } from '../interfaces';
 import { integrityRequired, integrityToken } from './integrity';
 
 /*
@@ -91,18 +91,18 @@ async function serverError(res: Response): Promise<string> {
   return `Kaagaz server ${res.status}${detail ? `: ${detail}` : ''}`;
 }
 
-async function proxyPost<T>(path: string, body: unknown, retry = true): Promise<T> {
+async function proxyPost<T>(path: string, body: unknown, retry = true, timeoutMs = 60_000): Promise<T> {
   assertConsent();
   const res = await fetch(`${proxyUrl()}${path}`, {
     method: 'POST',
     headers: { authorization: `Bearer ${await getToken()}`, 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   // The server's signing secret was rotated: get a new token once.
   if (res.status === 401 && retry) {
     await forgetToken();
-    return proxyPost(path, body, false);
+    return proxyPost(path, body, false, timeoutMs);
   }
   if (!res.ok) throw new Error(await serverError(res));
   return res.json() as Promise<T>;
@@ -127,8 +127,14 @@ export const setDevApiKey = (key: string) => localStorage.setItem(KEY_STORE, key
 const LLM_MODEL = (import.meta.env.VITE_LLM_MODEL as string | undefined) || 'gemma-4-31b-it';
 const EMBED_MODEL = (import.meta.env.VITE_EMBED_MODEL as string | undefined) || 'gemini-embedding-001';
 const GOOGLE = 'https://generativelanguage.googleapis.com/v1beta/models';
+/** Must accept audio; the hosted Gemma 4 31B does not. The proxy has its own setting (TRANSCRIBE_MODEL). */
+const TRANSCRIBE_MODEL = (import.meta.env.VITE_TRANSCRIBE_MODEL as string | undefined) || 'gemini-2.5-flash';
+/** Same prompt as the proxy's, which fixes it server-side. */
+const TRANSCRIBE_PROMPT =
+  'Transcribe this recording exactly as spoken, in the language spoken (Hindi in Devanagari). Do not translate or summarise. ' +
+  'If there is no speech, reply [no speech]. Return only the transcription.';
 
-async function googlePost(model: string, method: string, body: unknown): Promise<any> {
+async function googlePost(model: string, method: string, body: unknown, timeoutMs = 60_000): Promise<any> {
   assertConsent();
   const key = getDevApiKey();
   if (!key) throw new Error('No API key. Add one in Settings.');
@@ -136,13 +142,17 @@ async function googlePost(model: string, method: string, body: unknown): Promise
     method: 'POST',
     headers: { 'x-goog-api-key': key, 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`Gemini API ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
 // Clients
+
+/** The reply's text, skipping reasoning ("thought") parts if the model returns any. */
+const finalText = (json: any): string =>
+  ((json.candidates?.[0]?.content?.parts ?? []) as any[]).filter((p) => !p.thought).map((p) => p.text ?? '').join('').trim();
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
@@ -161,9 +171,17 @@ export class GemmaLlmClient implements LlmClient {
       contents: [{ parts }],
       generationConfig: { temperature: 0 },
     });
-    const out: unknown[] = json.candidates?.[0]?.content?.parts ?? [];
-    // Skip reasoning ("thought") parts if the model returns any; only the final answer is wanted.
-    return out.filter((p: any) => !p.thought).map((p: any) => p.text ?? '').join('').trim();
+    return finalText(json);
+  }
+}
+
+export class GeminiTranscriber implements Transcriber {
+  async transcribe(base64: string, mimeType: string): Promise<string> {
+    const audio = { mime_type: mimeType, data: base64 };
+    if (usesProxy()) return (await proxyPost<{ text: string }>('/v1/transcribe', { audio }, true, 180_000)).text;
+    return finalText(
+      await googlePost(TRANSCRIBE_MODEL, 'generateContent', { contents: [{ parts: [{ inline_data: audio }, { text: TRANSCRIBE_PROMPT }] }], generationConfig: { temperature: 0 } }, 180_000),
+    );
   }
 }
 

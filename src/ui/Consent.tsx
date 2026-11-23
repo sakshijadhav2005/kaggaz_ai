@@ -46,12 +46,17 @@ export function FirstRunConsent() {
   const [dismissed, setDismissed] = useState(false);
   if (!hostedConfigured() || status !== 'unasked' || dismissed) return null;
   return (
-    <Modal title={s.consent.title} onClose={() => setDismissed(true)}>
+    <Modal
+      title={s.consent.title}
+      onClose={() => setDismissed(true)}
+      footer={
+        <div className="consent-actions">
+          <IonButton fill="outline" onClick={() => void decide(false, 'first-run')}>{s.consent.decline}</IonButton>
+          <IonButton onClick={() => void decide(true, 'first-run')}>{s.consent.allow}</IonButton>
+        </div>
+      }
+    >
       <Notice />
-      <div className="actions consent-actions">
-        <IonButton fill="outline" onClick={() => void decide(false, 'first-run')}>{s.consent.decline}</IonButton>
-        <IonButton onClick={() => void decide(true, 'first-run')}>{s.consent.allow}</IonButton>
-      </div>
     </Modal>
   );
 }
@@ -76,7 +81,7 @@ export function CloudSettingsPanel() {
   };
 
   return (
-    <section className="lock-settings">
+    <section className="panel">
       <h2>{s.consent.panelTitle}</h2>
       <IonToggle
         checked={on}

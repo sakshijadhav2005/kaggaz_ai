@@ -6,6 +6,8 @@ compatibility_date = "2026-10-01"
 [vars]
 LLM_MODEL = "gemma-4-31b-it"
 EMBED_MODEL = "gemini-embedding-001"
+# Speech to text for imported audio. Gemma 4 31B takes no audio, so this is a separate model that does.
+TRANSCRIBE_MODEL = "gemini-2.5-flash"
 # The Android app's WebView origin, and the Vite dev server.
 ALLOWED_ORIGINS = "https://localhost,http://localhost:5173"
 
@@ -33,3 +35,9 @@ simple = { limit = 20, period = 60 }
 name = "EMBED_LIMITER"
 namespace_id = "1003"
 simple = { limit = 120, period = 60 }
+
+# Audio transcriptions per device. Each sends a whole recording (up to 8 MB), so kept low.
+[[ratelimits]]
+name = "TRANSCRIBE_LIMITER"
+namespace_id = "1004"
+simple = { limit = 6, period = 60 }

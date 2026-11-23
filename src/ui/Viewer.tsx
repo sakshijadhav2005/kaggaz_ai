@@ -115,34 +115,32 @@ export default function Viewer({ fileId, page, onClose }: Props) {
           <IonButtons slot="start">
             <IonButton onClick={onClose} aria-label={s.common.close}><Icon name="back" /></IonButton>
           </IonButtons>
-          <IonTitle>{file.name}</IonTitle>
+          <IonTitle className="ellipsis">{file.name}</IonTitle>
         </IonToolbar>
         {tools.length > 0 && (
-          <IonToolbar>
-            <div className="toolbar" role="toolbar" aria-label={s.viewer.actions}>
-              {tools.map((t) => (
-                <IonButton
-                  key={t.id}
-                  size="small"
-                  fill={t.on ? 'solid' : 'outline'}
-                  color={t.danger ? 'danger' : 'primary'}
-                  aria-pressed={t.on}
-                  onClick={t.click}
-                >
-                  <Icon name={t.icon} size={16} filled={t.on} /> {t.label}
-                </IonButton>
-              ))}
-            </div>
-          </IonToolbar>
+          <div className="viewer-actions" role="toolbar" aria-label={s.viewer.actions}>
+            {tools.map((t) => (
+              <button
+                key={t.id}
+                className={`viewer-action${t.on ? ' on' : ''}${t.danger ? ' danger' : ''}`}
+                aria-pressed={t.id === 'fav' || t.id === 'lock' ? !!t.on : undefined}
+                disabled={busy}
+                onClick={t.click}
+              >
+                <Icon name={t.icon} size={20} filled={t.on && t.id === 'fav'} />
+                <span>{t.label}</span>
+              </button>
+            ))}
+          </div>
         )}
         {busy && <IonProgressBar type="indeterminate" />}
       </IonHeader>
       <IonContent className="ion-padding">
-        <p className="meta">
-          {s.viewer.folder(s.folders[file.folder], s.source[file.source] ?? file.source)}
-          {inTrash && <span className="badge">{s.viewer.inTrash}</span>}
-          {locked && <span className="badge"><Icon name="lock" size={11} /> {s.viewer.lockedBadge}</span>}
-          {file.status === 'needs_review' && <span className="badge">{s.viewer.needsReview}</span>}
+        <p className="meta tags">
+          <span>{s.viewer.folder(s.folders[file.folder], s.source[file.source] ?? file.source)}</span>
+          {inTrash && <span className="tag danger">{s.viewer.inTrash}</span>}
+          {locked && <span className="tag"><Icon name="lock" size={12} /> {s.viewer.lockedBadge}</span>}
+          {file.status === 'needs_review' && <span className="tag warn">{s.viewer.needsReview}</span>}
         </p>
         {locked && !sealed && <p className="hint">{s.viewer.lockHint}</p>}
         {error && <p className="error">{error}</p>}
@@ -156,7 +154,14 @@ export default function Viewer({ fileId, page, onClose }: Props) {
           <>
             {blob && file.type === 'pdf' && <PdfView blob={blob} page={page} />}
             {blob && file.type === 'image' && <ImageView blob={blob} />}
-            {file.type !== 'pdf' && file.type !== 'image' && <p className="empty">{s.viewer.noPreview}</p>}
+            {blob && file.type === 'audio' && <AudioView blob={blob} />}
+            {file.type === 'other' && <p className="empty">{s.viewer.noPreview}</p>}
+            {(file.type === 'audio' || file.type === 'other') && file.text.trim() !== '' && (
+              <section className="panel transcript">
+                <h2>{s.viewer.extractedText}</h2>
+                <p>{file.text}</p>
+              </section>
+            )}
           </>
         )}
       </IonContent>
@@ -176,23 +181,40 @@ export default function Viewer({ fileId, page, onClose }: Props) {
         />
       )}
       {dialog === 'edit' && (
-        <Modal title={s.viewer.extractedText} onClose={() => setDialog(null)}>
-          <IonTextarea fill="outline" value={draft} onIonInput={(e) => setDraft(String(e.detail.value ?? ''))} rows={12} aria-label={s.viewer.extractedText} />
-          <div className="actions">
-            <IonButton fill="outline" onClick={() => setDialog(null)}>{s.common.cancel}</IonButton>
-            <IonButton
-              onClick={() => {
-                setDialog(null);
-                void run(() => ingest.replaceText(file, draft));
-              }}
-            >
-              {s.common.save}
-            </IonButton>
-          </div>
+        <Modal
+          title={s.viewer.extractedText}
+          size="full"
+          onClose={() => setDialog(null)}
+          footer={
+            <>
+              <IonButton fill="outline" onClick={() => setDialog(null)}>{s.common.cancel}</IonButton>
+              <IonButton
+                onClick={() => {
+                  setDialog(null);
+                  void run(() => ingest.replaceText(file, draft));
+                }}
+              >
+                {s.common.save}
+              </IonButton>
+            </>
+          }
+        >
+          <IonTextarea fill="outline" value={draft} onIonInput={(e) => setDraft(String(e.detail.value ?? ''))} autoGrow rows={14} aria-label={s.viewer.extractedText} />
         </Modal>
       )}
     </IonModal>
   );
+}
+
+/** Plays an imported recording. */
+function AudioView({ blob }: { blob: Blob }) {
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    const u = URL.createObjectURL(blob);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [blob]);
+  return url ? <audio className="audio" controls src={url} /> : null;
 }
 
 function ImageView({ blob }: { blob: Blob }) {

@@ -14,8 +14,8 @@ async function load(bytes: Uint8Array): Promise<PDFDocument> {
   try {
     return await PDFDocument.load(bytes, { updateMetadata: false });
   } catch (e) {
-    if (/encrypt/i.test(String(e))) throw new PdfOpError('This PDF is password-protected, so it cannot be changed.');
-    throw new PdfOpError('This file could not be read as a PDF.');
+    if (/encrypt/i.test(String(e))) throw new PdfOpError('encrypted');
+    throw new PdfOpError('notPdfFile');
   }
 }
 
@@ -36,10 +36,10 @@ export function parsePageGroups(spec: string | undefined, pageCount: number): nu
   if (s === '' || s.toLowerCase() === 'all') return [Array.from({ length: pageCount }, (_, i) => i)];
   return s.split(',').filter(Boolean).map((part) => {
     const m = /^(\d+)(?:-(\d*))?$/.exec(part);
-    if (!m) throw new PdfOpError(`"${part}" is not a page or range. Use numbers like 1-3, 5.`);
+    if (!m) throw new PdfOpError('badRange', part);
     const from = Number(m[1]);
     const to = m[2] === undefined ? from : m[2] === '' ? pageCount : Number(m[2]);
-    if (from < 1 || to > pageCount || from > to) throw new PdfOpError(`Pages ${part} are outside 1-${pageCount}.`);
+    if (from < 1 || to > pageCount || from > to) throw new PdfOpError('outOfRange', part, pageCount);
     return Array.from({ length: to - from + 1 }, (_, i) => from - 1 + i);
   });
 }
@@ -49,7 +49,7 @@ export async function pageCount(bytes: Uint8Array): Promise<number> {
 }
 
 export async function merge(pdfs: Uint8Array[]): Promise<Uint8Array> {
-  if (pdfs.length < 2) throw new PdfOpError('Pick at least two PDFs to merge.');
+  if (pdfs.length < 2) throw new PdfOpError('mergeNeedsTwo');
   const out = await PDFDocument.create();
   for (const bytes of pdfs) {
     const src = await load(bytes);
@@ -71,7 +71,7 @@ export async function split(bytes: Uint8Array, spec?: string): Promise<Uint8Arra
   const src = await load(bytes);
   const n = src.getPageCount();
   const groups = spec?.trim() ? parsePageGroups(spec, n) : Array.from({ length: n }, (_, i) => [i]);
-  if (groups.length < 2) throw new PdfOpError('That would give just one file. Use ranges like 1-2, 3-5, or leave pages empty to split every page.');
+  if (groups.length < 2) throw new PdfOpError('splitGivesOne');
   const outs: Uint8Array[] = [];
   for (const g of groups) {
     const out = await PDFDocument.create();
@@ -84,7 +84,7 @@ export async function split(bytes: Uint8Array, spec?: string): Promise<Uint8Arra
 export async function deletePages(bytes: Uint8Array, spec: string): Promise<Uint8Array> {
   const doc = await load(bytes);
   const drop = new Set(parsePageSpec(spec, doc.getPageCount()));
-  if (drop.size >= doc.getPageCount()) throw new PdfOpError('That would delete every page.');
+  if (drop.size >= doc.getPageCount()) throw new PdfOpError('deletesEverything');
   [...drop].sort((a, b) => b - a).forEach((i) => doc.removePage(i));
   return save(doc);
 }
@@ -113,8 +113,8 @@ function centredRotated(cx: number, cy: number, w: number, h: number, angle: num
 
 export async function watermark(bytes: Uint8Array, text: string, opacity = 0.18): Promise<Uint8Array> {
   const t = text.trim();
-  if (!t) throw new PdfOpError('Type the watermark text.');
-  if (!LATIN.test(t)) throw new PdfOpError('Watermark text in this script needs the image path (watermarkImage).');
+  if (!t) throw new PdfOpError('watermarkEmpty');
+  if (!LATIN.test(t)) throw new PdfOpError('watermarkNeedsImage');
   const doc = await load(bytes);
   const font = await doc.embedFont(StandardFonts.HelveticaBold);
   for (const page of doc.getPages()) {
@@ -187,7 +187,7 @@ export function fitA4(px: { width: number; height: number }): { w: number; h: nu
 
 /** One image per page, each page sized to its image. */
 export async function imagesToPdf(images: PdfImage[]): Promise<Uint8Array> {
-  if (images.length === 0) throw new PdfOpError('Pick at least one image.');
+  if (images.length === 0) throw new PdfOpError('noImages');
   const doc = await PDFDocument.create();
   for (const img of images) {
     const embedded = img.mime === 'image/png' ? await doc.embedPng(img.bytes) : await doc.embedJpg(img.bytes);

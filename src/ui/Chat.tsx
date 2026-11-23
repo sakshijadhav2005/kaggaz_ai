@@ -226,6 +226,7 @@ export default function Chat({ onOpen, onTab }: { onOpen: OpenFn; onTab: (tab: A
           <form className="composer" onSubmit={send}>
             {voiceSupported() && (
               <IonButton
+                color="primary"
                 fill={listening ? 'solid' : 'outline'}
                 className={listening ? 'mic listening' : 'mic'}
                 aria-label={listening ? s.voice.stop : s.voice.start}
@@ -243,7 +244,7 @@ export default function Chat({ onOpen, onTab }: { onOpen: OpenFn; onTab: (tab: A
               placeholder={s.chat.placeholder}
               aria-label={s.chat.placeholder}
             />
-            <IonButton type="submit" disabled={busy || listening}><Icon name="send" size={18} /> {s.chat.send}</IonButton>
+            <IonButton color="primary" type="submit" disabled={busy || listening}><Icon name="send" size={18} /> {s.chat.send}</IonButton>
           </form>
         </IonToolbar>
       </IonFooter>

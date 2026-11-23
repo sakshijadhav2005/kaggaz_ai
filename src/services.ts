@@ -12,6 +12,7 @@ import { IngestService } from './core/ingestService';
 import { buildNamePrompt, heuristicName, parseSuggestedName } from './core/naming';
 import { LocalReminderScheduler } from './core/scheduler';
 import { CapacitorVault } from './core/vault';
+import { AudioExtractor } from './extract/audioExtractor';
 import { MlKitEngine } from './extract/mlkitEngine';
 import { OcrExtractor } from './extract/ocrExtractor';
 import { FallbackEngine } from './extract/ocrEngine';
@@ -19,7 +20,7 @@ import { PdfExtractor } from './extract/pdfExtractor';
 import { TesseractEngine } from './extract/tesseractEngine';
 import { Indexer } from './index/indexer';
 import type { ReminderScheduler } from './interfaces';
-import { GemmaLlmClient, GeminiEmbeddingProvider, hostedAllowed } from './llm/gemini';
+import { GemmaLlmClient, GeminiEmbeddingProvider, GeminiTranscriber, hostedAllowed } from './llm/gemini';
 import { OnDeviceLlmClient } from './llm/onDevice';
 import { RoutedLlmClient } from './llm/router';
 import { rasterize, textImage, toEmbeddable } from './pdf/browserImages';
@@ -106,7 +107,9 @@ export async function initServices(): Promise<Services> {
     return heuristicName(text);
   };
 
-  const ingest = new IngestService(vault, db, [new PdfExtractor(read, ocr), ocr], sorter, indexer, scheduler, suggestName);
+  // Audio is transcribed online only (the on-device model takes no audio); offline it is sorted by name.
+  const audio = new AudioExtractor(read, () => isOnline() && hostedAllowed(), new GeminiTranscriber());
+  const ingest = new IngestService(vault, db, [new PdfExtractor(read, ocr), ocr, audio], sorter, indexer, scheduler, suggestName);
   const pdf = new PdfTools({
     getFile: (id) => db.getFile(id),
     read,

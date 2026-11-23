@@ -1,12 +1,12 @@
 import { IonButton, IonContent, IonInput, IonProgressBar, IonSelect, IonSelectOption } from '@ionic/react';
 import { useEffect, useState } from 'react';
 
-import { useT, type Strings } from '../i18n';
+import { errorText, useT, type Strings } from '../i18n';
 import type { StoredFile } from '../models';
 import type { CompressLevel, PdfTools } from '../pdf/pdfTools';
 import { services } from '../services';
 import { Header, Modal, type OpenFn } from './common';
-import { FileGlyph, Icon } from './icons';
+import { FileGlyph, Icon, type IconName } from './icons';
 
 type Input = 'pdfs' | 'pdf' | 'images';
 type Field = 'pages' | 'pagesOptional' | 'angle' | 'text' | 'level' | 'name';
@@ -15,6 +15,7 @@ type ToolId = 'merge' | 'images' | 'compress' | 'extract' | 'split' | 'delete' |
 
 interface Tool {
   id: ToolId;
+  icon: IconName;
   input: Input;
   fields: Field[];
   run: (pdf: PdfTools, ids: string[], o: Options) => Promise<StoredFile[]>;
@@ -31,15 +32,15 @@ interface Options {
 const DEFAULTS: Options = { pages: '', angle: '90', text: '', level: 'balanced', name: '' };
 
 const TOOLS: Tool[] = [
-  { id: 'merge', input: 'pdfs', fields: ['name'], run: (p, ids, o) => p.merge(ids, o.name || undefined) },
-  { id: 'images', input: 'images', fields: ['name'], run: (p, ids, o) => p.imagesToPdf(ids, o.name || undefined) },
-  { id: 'compress', input: 'pdf', fields: ['level'], run: (p, [id], o) => p.compress(id, o.level) },
-  { id: 'extract', input: 'pdf', fields: ['pages'], run: (p, [id], o) => p.extractPages(id, o.pages) },
-  { id: 'split', input: 'pdf', fields: ['pagesOptional'], run: (p, [id], o) => p.split(id, o.pages || undefined) },
-  { id: 'delete', input: 'pdf', fields: ['pages'], run: (p, [id], o) => p.deletePages(id, o.pages) },
-  { id: 'rotate', input: 'pdf', fields: ['angle', 'pagesOptional'], run: (p, [id], o) => p.rotate(id, Number(o.angle) as 90 | 180 | 270, o.pages || undefined) },
-  { id: 'watermark', input: 'pdf', fields: ['text'], run: (p, [id], o) => p.watermark(id, o.text) },
-  { id: 'numbers', input: 'pdf', fields: [], run: (p, [id]) => p.addPageNumbers(id) },
+  { id: 'merge', icon: 'merge', input: 'pdfs', fields: ['name'], run: (p, ids, o) => p.merge(ids, o.name || undefined) },
+  { id: 'images', icon: 'image', input: 'images', fields: ['name'], run: (p, ids, o) => p.imagesToPdf(ids, o.name || undefined) },
+  { id: 'compress', icon: 'compress', input: 'pdf', fields: ['level'], run: (p, [id], o) => p.compress(id, o.level) },
+  { id: 'extract', icon: 'extract', input: 'pdf', fields: ['pages'], run: (p, [id], o) => p.extractPages(id, o.pages) },
+  { id: 'split', icon: 'split', input: 'pdf', fields: ['pagesOptional'], run: (p, [id], o) => p.split(id, o.pages || undefined) },
+  { id: 'delete', icon: 'removePages', input: 'pdf', fields: ['pages'], run: (p, [id], o) => p.deletePages(id, o.pages) },
+  { id: 'rotate', icon: 'rotate', input: 'pdf', fields: ['angle', 'pagesOptional'], run: (p, [id], o) => p.rotate(id, Number(o.angle) as 90 | 180 | 270, o.pages || undefined) },
+  { id: 'watermark', icon: 'watermark', input: 'pdf', fields: ['text'], run: (p, [id], o) => p.watermark(id, o.text) },
+  { id: 'numbers', icon: 'numbers', input: 'pdf', fields: [], run: (p, [id]) => p.addPageNumbers(id) },
 ];
 
 /** [title, hint] in the current language. */
@@ -52,11 +53,11 @@ export default function Tools({ onOpen }: { onOpen: OpenFn }) {
     <>
       <Header title={s.tools.title} />
       <IonContent className="ion-padding">
-        <p className="hint">{s.tools.intro}</p>
+        <p className="hint tools-intro">{s.tools.intro}</p>
         <div className="tool-grid">
           {TOOLS.map((t) => (
-            <button key={t.id} className="card tool-card" onClick={() => setTool(t)}>
-              <Icon name={t.input === 'images' ? 'image' : 'pdf'} />
+            <button key={t.id} className="tool-card" onClick={() => setTool(t)}>
+              <span className="tool-icon"><Icon name={t.icon} size={22} /></span>
               <strong>{text(s, t)[0]}</strong>
               <small>{text(s, t)[1]}</small>
             </button>
@@ -96,7 +97,7 @@ function ToolSheet({ tool, onOpen, onClose }: { tool: Tool; onOpen: OpenFn; onCl
     try {
       setMade(await tool.run(services().pdf, picked, o));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -106,28 +107,43 @@ function ToolSheet({ tool, onOpen, onClose }: { tool: Tool; onOpen: OpenFn; onCl
 
   if (made) {
     return (
-      <Modal title={title} onClose={onClose}>
-        <p>{s.tools.done(made.length)}</p>
+      <Modal
+        title={title}
+        onClose={onClose}
+        footer={
+          <>
+            <IonButton fill="outline" onClick={() => { setMade(null); setPicked([]); }}>{s.tools.another}</IonButton>
+            <IonButton onClick={onClose}>{s.common.close}</IonButton>
+          </>
+        }
+      >
+        <p className="success"><Icon name="check" size={18} /> {s.tools.done(made.length)}</p>
         {made.map((f) => (
           <button key={f.id} className="row" onClick={() => { onClose(); onOpen(f.id); }}>
             <FileGlyph type={f.type} size={26} />
             <span className="grow"><strong>{f.name}</strong><small>{s.folders[f.folder]} · {s.tools.tapToOpen}</small></span>
+            <Icon name="chevron" size={18} />
           </button>
         ))}
-        <div className="actions">
-          <IonButton fill="outline" onClick={() => { setMade(null); setPicked([]); }}>{s.tools.another}</IonButton>
-          <IonButton onClick={onClose}>{s.common.close}</IonButton>
-        </div>
       </Modal>
     );
   }
 
   return (
-    <Modal title={title} onClose={onClose}>
+    <Modal
+      title={title}
+      size="full"
+      onClose={onClose}
+      footer={
+        <IonButton disabled={busy || missing} onClick={() => void run()}>
+          {busy ? s.common.working : title}
+        </IonButton>
+      }
+    >
       <p className="hint">{hint}</p>
       <h2 className="tool-step">{multi ? s.tools.pickMany(kind === 'image') : s.tools.pickOne}</h2>
       {docs.length === 0 && <p className="empty">{s.tools.none(kind === 'image')}</p>}
-      <div className="tool-picker" role="listbox" aria-multiselectable={multi}>
+      {docs.length > 0 && <div className="tool-picker" role="listbox" aria-multiselectable={multi}>
         {docs.map((f) => {
           const n = picked.indexOf(f.id);
           return (
@@ -138,31 +154,28 @@ function ToolSheet({ tool, onOpen, onClose }: { tool: Tool; onOpen: OpenFn; onCl
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {tool.fields.includes('pages') && <Field label={s.tools.pages} value={o.pages} placeholder={s.tools.pagesPlaceholder} onChange={(v) => set('pages', v)} />}
       {tool.fields.includes('pagesOptional') && <Field label={s.tools.pagesOptional} value={o.pages} placeholder={s.tools.rangesPlaceholder} onChange={(v) => set('pages', v)} />}
       {tool.fields.includes('text') && <Field label={s.tools.watermarkText} value={o.text} placeholder={s.tools.watermarkPlaceholder} onChange={(v) => set('text', v)} />}
       {tool.fields.includes('name') && <Field label={s.tools.newName} value={o.name} placeholder={s.tools.newNamePlaceholder} onChange={(v) => set('name', v)} />}
       {tool.fields.includes('angle') && (
-        <IonSelect label={s.tools.turn} interface="popover" value={o.angle} onIonChange={(e) => set('angle', e.detail.value)}>
+        <IonSelect className="tool-field" label={s.tools.turn} labelPlacement="stacked" fill="outline" interface="popover" value={o.angle} onIonChange={(e) => set('angle', e.detail.value)}>
           <IonSelectOption value="90">{s.tools.cw}</IonSelectOption>
           <IonSelectOption value="180">{s.tools.half}</IonSelectOption>
           <IonSelectOption value="270">{s.tools.ccw}</IonSelectOption>
         </IonSelect>
       )}
       {tool.fields.includes('level') && (
-        <IonSelect label={s.tools.level} interface="popover" value={o.level} onIonChange={(e) => set('level', e.detail.value)}>
+        <IonSelect className="tool-field" label={s.tools.level} labelPlacement="stacked" fill="outline" interface="popover" value={o.level} onIonChange={(e) => set('level', e.detail.value)}>
           <IonSelectOption value="balanced">{s.tools.balanced}</IonSelectOption>
           <IonSelectOption value="strong">{s.tools.strong}</IonSelectOption>
         </IonSelect>
       )}
 
-      {error && <p className="lock-error" role="alert">{error}</p>}
+      {error && <p className="error banner" role="alert">{error}</p>}
       {busy && <IonProgressBar type="indeterminate" />}
-      <div className="actions">
-        <IonButton disabled={busy || missing} onClick={() => void run()}>{busy ? s.common.working : title}</IonButton>
-      </div>
     </Modal>
   );
 }

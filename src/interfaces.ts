@@ -15,6 +15,11 @@ export interface LlmClient {
   completeWithImage(prompt: string, base64: string, mimeType: string): Promise<string>;
 }
 
+/** Speech to text for imported audio. Hosted only; see src/extract/audioExtractor.ts. */
+export interface Transcriber {
+  transcribe(base64: string, mimeType: string): Promise<string>;
+}
+
 export interface EmbeddingProvider {
   embed(text: string): Promise<number[]>;
 }

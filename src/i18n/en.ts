@@ -1,5 +1,6 @@
 import { NOT_FOUND } from '../answer/answerer';
 import type { Folder } from '../models';
+import { PDF_ERRORS_EN } from '../pdf/pdfErrors';
 
 /*
  * All text the app shows, in English. This is the source of truth: hi.ts must have exactly the same
@@ -58,6 +59,16 @@ export const en = {
     scanFailed: (e: string) => `Scan failed: ${e}`,
     evalRunning: 'Running eval…',
     evalResult: (passed: number, total: number) => `Answer accuracy: ${passed}/${total}`,
+    moreOptions: (name: string) => `More options for ${name}`,
+    addToFavourites: 'Add to favourites',
+    removeFromFavourites: 'Remove from favourites',
+    moveToFolder: 'Move to folder',
+    moveToTrash: 'Move to Trash',
+    restoreLabel: 'Restore',
+    deleteForeverLabel: 'Delete forever',
+    count: (n: number) => plural(n, 'document', 'documents'),
+    folders: 'Folders',
+    openLabel: 'Open',
   },
 
   settings: {
@@ -67,6 +78,9 @@ export const en = {
     devKey: 'Gemini API key (development)',
     devKeyPlaceholder: 'Needed for online answers',
     devKeyHint: 'Development builds only: release builds use the Kaagaz server instead. Without a key the app still imports, runs OCR, sorts by rules and searches by folder or keyword.',
+    aiTitle: 'AI and answers',
+    developer: 'Developer',
+    evalHint: 'Asks the built-in test questions and shows how many answers are right.',
   },
 
   dialogs: {
@@ -164,6 +178,9 @@ export const en = {
     general: 'General answer (not from your files):',
   },
 
+  /** Errors from the PDF tools, by code (src/pdf/pdfErrors.ts). The English table lives there so the worker can use it. */
+  pdfErrors: PDF_ERRORS_EN,
+
   tools: {
     title: 'PDF tools',
     intro: 'Every tool makes a new document. Your originals are never changed.',
@@ -211,7 +228,7 @@ export const en = {
   consent: {
     title: 'Use online AI?',
     points: [
-      ['What is sent', 'Text read from your documents (or a page image when the phone cannot read it), your questions, and file names. Locked documents are never sent.'],
+      ['What is sent', 'Text read from your documents (or a page image when the phone cannot read it), audio recordings you import (to turn speech into text), your questions, and file names. Locked documents are never sent.'],
       ['Why', 'To sort documents into folders, suggest names, answer your questions, and search by meaning.'],
       ['Who receives it', "It goes over an encrypted connection to the Kaagaz server, which passes it to Google's Gemini API to get the answer. The Kaagaz server does not keep it. Google handles it under its Gemini API terms."],
       ['Without it', 'Everything still works on this phone: folders are sorted by rules, search matches words, and offline Gemma 4 answers once you download it.'],

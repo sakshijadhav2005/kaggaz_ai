@@ -7,11 +7,13 @@
  *                                              body { nonce, integrityToken } and Google must vouch for the app
  *   POST /v1/generate  { parts } -> { text }   Gemma 4 (text, or one image + text)
  *   POST /v1/embed     { text } -> { values }  Gemini embedding
+ *   POST /v1/transcribe { audio } -> { text }  speech to text for imported audio files (TRANSCRIBE_MODEL;
+ *                                              the hosted Gemma 4 31B takes no audio)
  *
  * Tokens are "v1.<deviceId>.<hmac>", signed with TOKEN_SECRET, so no database is needed.
  * Rotating TOKEN_SECRET revokes every token; the app re-registers by itself.
  *
- * Tokens are anonymous, so anyone can get one. What stops abuse is that a token can only make the three
+ * Tokens are anonymous, so anyone can get one. What stops abuse is that a token can only make the four
  * calls above, at a limited rate, with a fixed model and size limits. Set a quota on the Google key too.
  */
 
@@ -26,11 +28,14 @@ export interface Env extends IntegrityEnv {
   TOKEN_SECRET: string;
   LLM_MODEL?: string;
   EMBED_MODEL?: string;
+  /** Must accept audio input. */
+  TRANSCRIBE_MODEL?: string;
   /** Comma-separated. The Android app's WebView origin is https://localhost. */
   ALLOWED_ORIGINS?: string;
   REGISTER_LIMITER?: RateLimiter;
   GENERATE_LIMITER?: RateLimiter;
   EMBED_LIMITER?: RateLimiter;
+  TRANSCRIBE_LIMITER?: RateLimiter;
 }
 
 const GOOGLE = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -41,6 +46,14 @@ const MAX_TEXT_CHARS = 200_000;
 const MAX_EMBED_CHARS = 20_000;
 const MAX_PARTS = 4;
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic']);
+/** The audio types the app imports (src/models.ts). */
+const AUDIO_TYPES = new Set(['audio/mpeg', 'audio/mp4', 'audio/wav', 'audio/aac', 'audio/ogg']);
+/** Base64 of an 8 MB recording; the body cap above leaves room for the JSON around it. */
+export const MAX_AUDIO_B64_CHARS = Math.ceil((8 * 1024 * 1024) / 3) * 4;
+export const DEFAULT_TRANSCRIBE_MODEL = 'gemini-2.5-flash';
+const TRANSCRIBE_PROMPT =
+  'Transcribe this recording exactly as spoken, in the language spoken (Hindi in Devanagari). Do not translate or summarise. ' +
+  'If there is no speech, reply [no speech]. Return only the transcription.';
 
 class HttpError extends Error {
   constructor(
@@ -91,6 +104,10 @@ export default {
       if (path === '/v1/generate') {
         await limit(env.GENERATE_LIMITER, deviceId);
         return json({ text: await generate(env, validateParts(body)) }, 200, cors);
+      }
+      if (path === '/v1/transcribe') {
+        await limit(env.TRANSCRIBE_LIMITER, deviceId);
+        return json({ text: await transcribe(env, validateAudio(body)) }, 200, cors);
       }
       if (path === '/v1/embed') {
         await limit(env.EMBED_LIMITER, deviceId);
@@ -185,6 +202,18 @@ export function validateParts(body: unknown): Part[] {
   });
 }
 
+type Audio = { mime_type: string; data: string };
+
+/** One recording of a known type and size. The prompt is fixed here, so the route can only transcribe. */
+export function validateAudio(body: unknown): Audio {
+  const a = (body as { audio?: unknown })?.audio as Partial<Audio> | undefined;
+  if (!a || typeof a.mime_type !== 'string' || !AUDIO_TYPES.has(a.mime_type) || typeof a.data !== 'string' || a.data.length === 0) {
+    throw new HttpError(400, 'Bad audio.');
+  }
+  if (a.data.length > MAX_AUDIO_B64_CHARS) throw new HttpError(413, 'Recording too large.');
+  return { mime_type: a.mime_type, data: a.data };
+}
+
 export function validateEmbedText(body: unknown): string {
   const text = (body as { text?: unknown })?.text;
   if (typeof text !== 'string' || text.length === 0 || text.length > MAX_EMBED_CHARS) throw new HttpError(400, 'Bad text.');
@@ -214,6 +243,15 @@ async function generate(env: Env, parts: Part[]): Promise<string> {
   });
   const got: any[] = out.candidates?.[0]?.content?.parts ?? [];
   // Skip reasoning ("thought") parts; only the final answer is returned.
+  return got.filter((p) => !p.thought).map((p) => p.text ?? '').join('').trim();
+}
+
+async function transcribe(env: Env, audio: Audio): Promise<string> {
+  const out = await google(env, env.TRANSCRIBE_MODEL || DEFAULT_TRANSCRIBE_MODEL, 'generateContent', {
+    contents: [{ parts: [{ inline_data: audio }, { text: TRANSCRIBE_PROMPT }] }],
+    generationConfig: { temperature: 0 },
+  });
+  const got: any[] = out.candidates?.[0]?.content?.parts ?? [];
   return got.filter((p) => !p.thought).map((p) => p.text ?? '').join('').trim();
 }
 

@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 
 import { en, type Strings } from './en';
 import { hi } from './hi';
+import { PdfOpError } from '../pdf/pdfErrors';
 
 /*
  * The app's language. Components call useT() and re-render when it changes; other code calls strings().
@@ -62,4 +63,10 @@ const subscribe = (fn: () => void) => {
 export function useT(): Strings {
   useSyncExternalStore(subscribe, lang, lang);
   return DICTS[current];
+}
+
+/** An error's text for the screen: PDF tool errors in the app's language, anything else as it is. */
+export function errorText(e: unknown): string {
+  if (e instanceof PdfOpError) return e.textIn(strings().pdfErrors);
+  return e instanceof Error ? e.message : String(e);
 }
