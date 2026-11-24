@@ -10,7 +10,8 @@ import { PDF_ERRORS_EN } from '../pdf/pdfErrors';
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export const en = {
-  tabs: { library: 'Library', ask: 'Ask', tools: 'Tools', expenses: 'Expenses', reminders: 'Reminders' },
+  tabs: { library: 'Library', ask: 'Ask', tools: 'Tools', expenses: 'Expenses', reminders: 'Reminders', settings: 'Settings' },
+  theme: { switchToLight: 'Switch to light theme', switchToDark: 'Switch to dark theme' },
 
   folders: {
     Aadhaar: 'Aadhaar', PAN: 'PAN', Bills: 'Bills', Receipts: 'Receipts', Medical: 'Medical', Study: 'Study', Other: 'Other', Unsorted: 'Unsorted',
@@ -73,6 +74,10 @@ export const en = {
 
   settings: {
     title: 'Settings',
+    appearanceTitle: 'Theme',
+    themeLight: 'Warm light',
+    themeDark: 'Warm dark',
+    themeNeon: 'Neon Glass',
     language: 'Language',
     offlineHint: 'Offline, answers come from Gemma 4 on this phone once it is downloaded below.',
     devKey: 'Gemini API key (development)',
@@ -81,6 +86,21 @@ export const en = {
     aiTitle: 'AI and answers',
     developer: 'Developer',
     evalHint: 'Asks the built-in test questions and shows how many answers are right.',
+  },
+
+  storage: {
+    title: 'Storage',
+    loading: 'Calculating stored file sizes…',
+    failed: (e: string) => `Could not read storage details: ${e}`,
+    files: 'Uploaded files',
+    fileCount: (n: number) => `${n} files`,
+    totalUsed: 'Total file storage used',
+    pdfs: 'PDF files',
+    pdfCount: (n: number) => `${n} PDFs`,
+    pdfUsed: 'PDF storage used',
+    location: "Uploaded files are kept in this app's private storage on this device:",
+    encryption: 'Files are encrypted and are not in the public Downloads folder. Use Backup to export a copy.',
+    trash: 'Storage totals include files in Trash until they are permanently deleted.',
   },
 
   dialogs: {
@@ -147,12 +167,19 @@ export const en = {
     empty: 'Try "give me Aadhaar card", "what was the August bill?", or "move my PAN card to Study". Tap the microphone to speak.',
     placeholder: 'Find a file or ask a question',
     send: 'Send',
+    download: 'Download',
+    downloading: 'Preparing…',
+    downloadFile: (name: string) => `Download ${name}`,
+    downloadTitle: 'Save file from Kaagaz',
+    downloadFailed: (e: string) => `Could not download file: ${e}`,
+    downloadUnavailable: 'This file is no longer available.',
     source: 'Source:',
     confirmed: 'Confirmed',
     cancelled: 'Cancelled',
     cancelledReply: 'Cancelled. Nothing was changed.',
     needModel: 'To carry out commands I need Gemma 4. Go online, or download offline Gemma 4 in Settings.',
     noFilesIn: (folder: string) => `There are no files in ${folder} yet.`,
+    noMatchingFiles: 'No matching document was found.',
     found: (n: number) => `Found ${plural(n, 'file', 'files')}:`,
     lockedSkipped: (n: number) => `${plural(n, 'locked document is', 'locked documents are')} not shown. Open the Library to see them.`,
   },
@@ -176,6 +203,7 @@ export const en = {
     getModel: 'Download offline Gemma 4 in Settings for written answers.',
     found: 'Here is what I found in your files:',
     general: 'General answer (not from your files):',
+    mobileNumber: (number: string) => `Mobile number: ${number}.`,
   },
 
   /** Errors from the PDF tools, by code (src/pdf/pdfErrors.ts). The English table lives there so the worker can use it. */

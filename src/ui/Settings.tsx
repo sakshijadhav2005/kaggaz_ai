@@ -1,5 +1,5 @@
-import { IonButton, IonInput, IonItem, IonLabel, IonList, IonSegment, IonSegmentButton, IonSpinner } from '@ionic/react';
-import { useState } from 'react';
+import { IonButton, IonInput, IonItem, IonLabel, IonList, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSpinner } from '@ionic/react';
+import { useContext, useState } from 'react';
 
 import qaCases from '../eval/eval_qa.json';
 import { runQaEval, type QaCase, type QaOutcome } from '../eval/qaEval';
@@ -7,14 +7,16 @@ import { LANGS, lang, setLang, useT } from '../i18n';
 import { getDevApiKey, setDevApiKey, usesProxy } from '../llm/gemini';
 import { services } from '../services';
 import BackupPanel from './Backup';
-import { Modal } from './common';
+import { Modal, ThemeContext } from './common';
 import { CloudSettingsPanel } from './Consent';
 import LockSettingsPanel from './LockSettings';
 import OfflineModel from './OfflineModel';
+import StoragePanel from './StoragePanel';
 
 /** The Settings screen, opened from the gear in any tab's header. */
 export default function Settings({ onClose }: { onClose: () => void }) {
   const s = useT();
+  const theme = useContext(ThemeContext);
   const [key, setKey] = useState(getDevApiKey());
   const [evalResults, setEvalResults] = useState<QaOutcome[] | 'running' | null>(null);
   // Release builds use the Kaagaz server and have no key to enter.
@@ -43,6 +45,27 @@ export default function Settings({ onClose }: { onClose: () => void }) {
       footer={<IonButton onClick={close}>{proxy ? s.common.close : s.common.save}</IonButton>}
     >
       <div className="settings">
+        <StoragePanel />
+
+        {theme && (
+          <section className="panel">
+            <IonSelect
+              label={s.settings.appearanceTitle}
+              labelPlacement="stacked"
+              interface="popover"
+              value={theme.theme}
+              onIonChange={(e) => {
+                const value = e.detail.value;
+                if (value === 'light' || value === 'dark' || value === 'neon') theme.setTheme(value);
+              }}
+            >
+              <IonSelectOption value="light">{s.settings.themeLight}</IonSelectOption>
+              <IonSelectOption value="dark">{s.settings.themeDark}</IonSelectOption>
+              <IonSelectOption value="neon">{s.settings.themeNeon}</IonSelectOption>
+            </IonSelect>
+          </section>
+        )}
+
         <section className="panel">
           <h2>{s.settings.language}</h2>
           <IonSegment value={lang()} onIonChange={(e) => setLang(e.detail.value === 'hi' ? 'hi' : 'en')} aria-label={s.settings.language}>

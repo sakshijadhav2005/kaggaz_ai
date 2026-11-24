@@ -1,14 +1,72 @@
 import { topK } from '../index/vector';
 import type { EmbeddingProvider, LlmClient } from '../interfaces';
 import type { Chunk, StoredFile } from '../models';
+import { tokenize } from '../search/folderSearch';
 
 export const NOT_FOUND = "I couldn't find this in your files.";
 
 /** One copy of the answer prompt, used everywhere. */
 export const ANSWER_PROMPT =
-  'Answer only from the excerpts below. Cite excerpt IDs in square brackets. ' +
+  'Answer only from the excerpts below. Give only the requested fact in one brief sentence; do not summarize the full document unless asked. Cite excerpt IDs in square brackets. ' +
   'Answer in the language of the question. If the answer is not in the excerpts, say ' +
   `"${NOT_FOUND}" Never invent numbers or dates.`;
+
+const MOBILE_WORDS = new Set(['mobile', 'cell', 'cellular', 'phone', 'telephone', 'मोबाइल', 'मोबाईल', 'फोन', 'फ़ोन']);
+const CONTACT_WORDS = new Set(['contact', 'संपर्क']);
+const NUMBER_WORDS = new Set(['number', 'no', 'num', 'नंबर', 'नम्बर']);
+const MOBILE_QUERY_WORDS = new Set([
+  ...MOBILE_WORDS, ...CONTACT_WORDS, ...NUMBER_WORDS,
+  'what', 'whats', 'is', 'the', 'of', 'for', 'in', 'on', 'from', 'my', 'his', 'her', 'their',
+  'person', 'particular', 'specific', 'individual', 'someone', 'anyone', 'customer', 'employee', 'applicant',
+  'please', 'tell', 'me', 'find', 'give', 'show', 'get', 'document', 'file', 'resume', 'card', 'mobile',
+  'phone', 'named', 'called', 'with', 'whose', 'name',
+  'aadhaar', 'aadhar', 'uidai', 'pan', 'bill', 'receipt', 'invoice', 'medical', 'study', 'notes',
+  'pdf', 'cv', 'identity', 'attached', 'mr', 'mrs', 'ms', 'dr',
+  'क्या', 'है', 'का', 'की', 'के', 'मेरा', 'मेरी', 'उसका', 'उसकी', 'बताएं', 'दस्तावेज़', 'इस', 'उस', 'व्यक्ति',
+]);
+const MOBILE_LABEL = /(?:mobile|cell(?:ular)?|phone|telephone|contact|मोबाइल|मोबाईल|फोन|फ़ोन|संपर्क)/i;
+const MOBILE_NUMBER_PATTERN = /(^|[^\d])((?:(?:\+?91|0)[\s-]?)?[6-9](?:[\s-]?\d){9})(?![\s-]?\d)/g;
+
+export function isMobileNumberQuestion(question: string): boolean {
+  const words = new Set(tokenize(question));
+  return [...MOBILE_WORDS].some((word) => words.has(word)) ||
+    ([...CONTACT_WORDS].some((word) => words.has(word)) && [...NUMBER_WORDS].some((word) => words.has(word)));
+}
+
+export function mobileNumberSubject(question: string): string {
+  return tokenize(question).filter((word) => word.length > 1 && !MOBILE_QUERY_WORDS.has(word)).join(' ');
+}
+
+/** Returns the matching mobile number and passage index, or null if none is safely attributable. */
+export function findMobileNumber(
+  question: string,
+  passages: ReadonlyArray<Pick<Passage, 'text'>>,
+): { number: string; passageIndex: number } | null {
+  const subject = mobileNumberSubject(question).split(' ').filter(Boolean);
+
+  for (const [passageIndex, passage] of passages.entries()) {
+    for (const match of passage.text.matchAll(MOBILE_NUMBER_PATTERN)) {
+      if (match.index === undefined) continue;
+      const candidate = match[2];
+      const digits = candidate.replace(/\D/g, '');
+      const number = digits.length === 12 && digits.startsWith('91')
+        ? digits.slice(2)
+        : digits.length === 11 && digits.startsWith('0')
+          ? digits.slice(1)
+          : digits;
+      if (number.length !== 10) continue;
+
+      const start = Math.max(0, match.index - 120);
+      const end = Math.min(passage.text.length, match.index + match[0].length + 120);
+      const context = passage.text.slice(start, end);
+      const contextWords = new Set(tokenize(context));
+      if (subject.length > 0 && !subject.every((word) => contextWords.has(word))) continue;
+      if (subject.length === 0 && !MOBILE_LABEL.test(context)) continue;
+      return { number, passageIndex };
+    }
+  }
+  return null;
+}
 
 /**
  * Used only when nothing in the user's files matches. The reply is shown labelled as

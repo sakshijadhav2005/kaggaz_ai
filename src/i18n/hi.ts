@@ -6,7 +6,8 @@ import type { Strings } from './en';
  */
 
 export const hi: Strings = {
-  tabs: { library: 'लाइब्रेरी', ask: 'पूछें', tools: 'टूल्स', expenses: 'खर्च', reminders: 'रिमाइंडर' },
+  tabs: { library: 'लाइब्रेरी', ask: 'पूछें', tools: 'टूल्स', expenses: 'खर्च', reminders: 'रिमाइंडर', settings: 'सेटिंग्स' },
+  theme: { switchToLight: 'लाइट थीम करें', switchToDark: 'डार्क थीम करें' },
 
   folders: {
     Aadhaar: 'आधार', PAN: 'पैन', Bills: 'बिल', Receipts: 'रसीदें', Medical: 'मेडिकल', Study: 'पढ़ाई', Other: 'अन्य', Unsorted: 'बिना छँटे',
@@ -69,6 +70,10 @@ export const hi: Strings = {
 
   settings: {
     title: 'सेटिंग्स',
+    appearanceTitle: 'थीम',
+    themeLight: 'हल्की गर्म थीम',
+    themeDark: 'गहरी गर्म थीम',
+    themeNeon: 'नियॉन ग्लास',
     language: 'भाषा',
     offlineHint: 'बिना इंटरनेट के, जवाब इस फ़ोन पर चल रहे Gemma 4 से मिलते हैं, जब आप उसे नीचे डाउनलोड कर लें।',
     devKey: 'Gemini API key (डेवलपमेंट)',
@@ -77,6 +82,21 @@ export const hi: Strings = {
     aiTitle: 'AI और जवाब',
     developer: 'डेवलपर',
     evalHint: 'पहले से तय सवाल पूछकर दिखाता है कि कितने जवाब सही हैं।',
+  },
+
+  storage: {
+    title: 'स्टोरेज',
+    loading: 'फ़ाइलों का साइज़ गिन रहे हैं…',
+    failed: (e) => `स्टोरेज की जानकारी नहीं पढ़ सके: ${e}`,
+    files: 'अपलोड की गई फ़ाइलें',
+    fileCount: (n) => `${n} फ़ाइलें`,
+    totalUsed: 'कुल फ़ाइल स्टोरेज',
+    pdfs: 'PDF फ़ाइलें',
+    pdfCount: (n) => `${n} PDF`,
+    pdfUsed: 'PDF स्टोरेज',
+    location: 'अपलोड की गई फ़ाइलें इस डिवाइस में ऐप के निजी स्टोरेज में रहती हैं:',
+    encryption: 'फ़ाइलें एन्क्रिप्टेड हैं और सार्वजनिक Downloads फ़ोल्डर में नहीं हैं। कॉपी बाहर रखने के लिए Backup इस्तेमाल करें।',
+    trash: 'ट्रैश की फ़ाइलें हमेशा के लिए मिटाने तक स्टोरेज में गिनी जाती हैं।',
   },
 
   dialogs: {
@@ -143,12 +163,19 @@ export const hi: Strings = {
     empty: 'जैसे: "आधार कार्ड दिखाओ", "अगस्त का बिल कितना था?", या "मेरा पैन कार्ड पढ़ाई में रखो"। बोलकर पूछने के लिए माइक दबाएँ।',
     placeholder: 'फ़ाइल खोजें या सवाल पूछें',
     send: 'भेजें',
+    download: 'डाउनलोड करें',
+    downloading: 'फ़ाइल तैयार हो रही है…',
+    downloadFile: (name) => `${name} डाउनलोड करें`,
+    downloadTitle: 'Kaagaz से फ़ाइल सेव करें',
+    downloadFailed: (e) => `फ़ाइल डाउनलोड नहीं हो सकी: ${e}`,
+    downloadUnavailable: 'यह फ़ाइल अब उपलब्ध नहीं है।',
     source: 'स्रोत:',
     confirmed: 'पक्का किया',
     cancelled: 'रद्द किया',
     cancelledReply: 'रद्द कर दिया। कुछ नहीं बदला।',
     needModel: 'काम करने के लिए मुझे Gemma 4 चाहिए। इंटरनेट चालू करें, या सेटिंग्स में बिना इंटरनेट वाला Gemma 4 डाउनलोड करें।',
     noFilesIn: (folder) => `${folder} में अभी कोई फ़ाइल नहीं है।`,
+    noMatchingFiles: 'कोई मिलती-जुलती फ़ाइल नहीं मिली।',
     found: (n) => `${n} फ़ाइलें मिलीं:`,
     lockedSkipped: (n) => `${n} लॉक दस्तावेज़ यहाँ नहीं दिखाए गए। उन्हें लाइब्रेरी में देखें।`,
   },
@@ -172,6 +199,7 @@ export const hi: Strings = {
     getModel: 'लिखे हुए जवाबों के लिए सेटिंग्स में बिना इंटरनेट वाला Gemma 4 डाउनलोड करें।',
     found: 'आपकी फ़ाइलों में यह मिला:',
     general: 'आम जानकारी से जवाब (आपकी फ़ाइलों से नहीं):',
+    mobileNumber: (number) => `मोबाइल नंबर: ${number}।`,
   },
 
   pdfErrors: {

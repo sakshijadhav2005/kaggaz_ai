@@ -429,7 +429,7 @@ describe('answering from passages (offline path)', () => {
 });
 
 describe('searching file content', () => {
-  const hit = (fileName: string): SnippetHit => ({ fileId: 'f1', fileName, folder: 'Other', page: 1, snippet: 's', text: 't', score: 2, matched: ['x'] });
+  const hit = (fileName: string, text = 't'): SnippetHit => ({ fileId: 'f1', fileName, folder: 'Other', page: 1, snippet: 's', text, score: 2, matched: ['x'] });
   const answer = (text: string): Answer => ({ text, citations: [{ fileId: 'f1', fileName: 'resume.pdf', folder: 'Other', page: 1 }] });
   const log: string[] = [];
 
@@ -453,6 +453,43 @@ describe('searching file content', () => {
     expect(r.text).toBe('Python [1]');
     expect(r.citations?.[0].fileName).toBe('resume.pdf');
     expect(log).toEqual(['hosted']);
+  });
+
+  it('answers a mobile-number request with only the matching number and a downloadable source citation', async () => {
+    const r = await searchContent(
+      'What is the mobile number of Sakshi Jadhav?',
+      deps({ findPassages: async () => [hit('Sakshi_Jadhav_Resume.pdf', 'Sakshi Jadhav\nPhone: +91 98765 43210')] }),
+    );
+    expect(r.text).toBe('Mobile number: 9876543210.');
+    expect(r.citations).toEqual([{ fileId: 'f1', fileName: 'Sakshi_Jadhav_Resume.pdf', folder: 'Other', page: 1 }]);
+    expect(r.snippets).toBeUndefined();
+    expect(log).toEqual(['passages']);
+  });
+
+  it('retries a one-word person search so the mobile answer does not need Gemma', async () => {
+    const calls: string[] = [];
+    const r = await searchContent(
+      'Mobile number of Rajesh?',
+      deps({
+        findPassages: async (q) => {
+          calls.push(q);
+          return q === 'rajesh' ? [hit('contact.pdf', 'Rajesh\nPhone: 98765 43210')] : [];
+        },
+      }),
+    );
+    expect(r.text).toBe('Mobile number: 9876543210.');
+    expect(calls).toEqual(['Mobile number of Rajesh?', 'rajesh']);
+    expect(log).toEqual([]);
+  });
+
+  it('does not answer a mobile-number request from an unrelated number or ID', async () => {
+    const r = await searchContent(
+      'What is the mobile number of Sakshi Jadhav?',
+      deps({ findPassages: async () => [hit('ID.pdf', 'Someone else. Mobile: 98765 43210. Aadhaar: 1234 5678 9012.')] }),
+    );
+    expect(r.text).toBe(NOT_FOUND);
+    expect(r.citations).toBeUndefined();
+    expect(log).toEqual(['passages']);
   });
 
   it('offline with Gemma 4 on the device: writes an answer from the matching passages', async () => {

@@ -6,11 +6,12 @@ import type { ActionContext, AppTab } from '../agent/registry';
 import { actionsFor, matchSkills } from '../agent/skills';
 import type { Citation } from '../answer/answerer';
 import { searchContent } from '../answer/contentSearch';
+import { exportStoredFile } from '../core/fileExport';
 import { listen, stopListening, VoiceError, voiceSupported } from '../core/voice';
 import { lang, strings, useT } from '../i18n';
 import { hostedAllowed } from '../llm/gemini';
 import type { StoredFile } from '../models';
-import { folderForQuery, isFileRequest, isQuestion } from '../search/folderSearch';
+import { FOLDER_SYNONYMS, folderForQuery, isFileRequest, isQuestion, keywordTokens } from '../search/folderSearch';
 import { searchSnippets, variantsOf, type SnippetHit } from '../search/snippets';
 import { isOnline, services } from '../services';
 import { Header, type OpenFn } from './common';
@@ -33,6 +34,15 @@ interface Message {
 const history: Message[] = [];
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const FILE_REQUEST_WORDS = new Set([
+  'give', 'show', 'find', 'get', 'open', 'download', 'send', 'share', 'export', 'attach', 'fetch',
+  'retrieve', 'save', 'print', 'provide', 'want', 'need', 'have', 'bring', 'can', 'could', 'would',
+  'will', 'you', 'your', 'named', 'called', 'titled', 'document', 'documents',
+  'doc', 'docs', 'file', 'files', 'attachment', 'attachments', 'latest', 'newest', 'recent',
+  'मुझे', 'मेरा', 'मेरी', 'मेरे', 'आपका', 'आपकी', 'कृपया', 'की', 'के', 'का', 'में', 'यह', 'वह',
+  'दिखाओ', 'दिखाइए', 'दो', 'दे', 'दीजिए', 'डाउनलोड', 'भेजो', 'भेजिए', 'खोलो', 'खोलिए', 'निकालो', 'लाइए',
+  'दस्तावेज़', 'फ़ाइल', 'फाइल', 'फ़ाइलें', 'फाइलें', 'पीडीएफ', 'रिपोर्ट', 'रसीद', 'बिल', 'कार्ड', 'रिज़्यूमे',
+]);
 
 /** Wraps the query words found in [text] in <mark>. */
 function Highlight({ text, words }: { text: string; words: string[] }) {
@@ -53,6 +63,8 @@ export default function Chat({ onOpen, onTab }: { onOpen: OpenFn; onTab: (tab: A
   const [voiceNote, setVoiceNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState('');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<{ id: string; message: string } | null>(null);
   const content = useRef<HTMLIonContentElement>(null);
   const ctx: ActionContext = { openFile: onOpen, openTab: onTab };
 
@@ -61,6 +73,37 @@ export default function Chat({ onOpen, onTab }: { onOpen: OpenFn; onTab: (tab: A
     setMessages([...history]);
     setTimeout(() => void content.current?.scrollToBottom(250), 0);
   };
+
+  const downloadFile = async (fileId: string) => {
+    if (downloadingId) return;
+    setDownloadingId(fileId);
+    setDownloadError(null);
+    try {
+      const file = await services().db.getFile(fileId);
+      if (!file || file.deletedAt) throw new Error(s.chat.downloadUnavailable);
+      if (file.locked) throw new Error(s.viewer.stillLocked);
+      await exportStoredFile(file, services().read);
+    } catch (e) {
+      setDownloadError({ id: fileId, message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const downloadAction = (fileId: string, fileName: string) => (
+    <div className="download-action">
+      <button
+        className="download-file"
+        aria-label={s.chat.downloadFile(fileName)}
+        disabled={downloadingId !== null}
+        onClick={() => void downloadFile(fileId)}
+      >
+        <Icon name="download" size={18} />
+        {downloadingId === fileId ? s.chat.downloading : s.chat.download}
+      </button>
+      {downloadError?.id === fileId && <small className="error" role="alert">{s.chat.downloadFailed(downloadError.message)}</small>}
+    </div>
+  );
 
   /** "Move my PAN card to Study": Gemma 4 picks actions from the registry; the app runs them. */
   const runCommand = async (q: string, actionIds: string[], earlier: Message[]): Promise<Message> => {
@@ -96,14 +139,26 @@ export default function Chat({ onOpen, onTab }: { onOpen: OpenFn; onTab: (tab: A
     }
   };
 
-  /** "Give me Aadhaar card": the folder's files. */
+  /** Document requests return matching files with a download action. */
   const findFiles = async (q: string): Promise<Message> => {
-    const folder = folderForQuery(q)!;
-    const all = await services().db.files(folder);
+    const folder = folderForQuery(q);
+    const folderWords = folder ? FOLDER_SYNONYMS[folder] ?? [] : [];
+    const queryWords = keywordTokens(q);
+    const wantsLatest = queryWords.some((t) => ['latest', 'newest', 'recent'].includes(t));
+    const terms = queryWords.filter((t) => !FILE_REQUEST_WORDS.has(t) && !folderWords.includes(t));
+    const all = terms.length > 0
+      ? await services().db.keywordSearch(terms)
+      : await services().db.files(folder ?? undefined);
+    const matching = folder ? all.filter((f) => f.folder === folder) : all;
     // Locked documents are not listed in the conversation; the Library shows them behind the lock.
-    const files = all.filter((f) => !f.locked);
-    const lockedNote = all.length > files.length ? `\n${s.chat.lockedSkipped(all.length - files.length)}` : '';
-    if (files.length === 0) return { user: false, text: s.chat.noFilesIn(s.folders[folder]) + lockedNote };
+    const unlocked = matching.filter((f) => !f.locked);
+    const files = wantsLatest ? unlocked.slice(0, 1) : unlocked;
+    const lockedCount = matching.length - unlocked.length;
+    const lockedNote = lockedCount > 0 ? `\n${s.chat.lockedSkipped(lockedCount)}` : '';
+    if (files.length === 0) {
+      const empty = folder && terms.length === 0 ? s.chat.noFilesIn(s.folders[folder]) : s.chat.noMatchingFiles;
+      return { user: false, text: empty + lockedNote };
+    }
     return { user: false, text: s.chat.found(files.length) + lockedNote, files };
   };
 
@@ -181,17 +236,23 @@ export default function Chat({ onOpen, onTab }: { onOpen: OpenFn; onTab: (tab: A
           <div key={i} className={m.user ? 'bubble user' : 'bubble'}>
             <p>{m.text}</p>
             {m.files?.map((f) => (
-              <button key={f.id} className="row" onClick={() => onOpen(f.id)}>
-                <FileGlyph type={f.type} size={26} />
-                <span className="grow"><strong>{f.name}</strong><small>{s.folders[f.folder]}</small></span>
-              </button>
+              <div key={f.id} className="chat-file">
+                <button className="row" onClick={() => onOpen(f.id)}>
+                  <FileGlyph type={f.type} size={26} />
+                  <span className="grow"><strong>{f.name}</strong><small>{s.folders[f.folder]}</small></span>
+                </button>
+                {downloadAction(f.id, f.name)}
+              </div>
             ))}
             {m.snippets?.map((h, j) => (
-              <button key={j} className="hit" onClick={() => onOpen(h.fileId, h.page)}>
-                <strong>{h.fileName}</strong>
-                <small>{s.folders[h.folder as keyof typeof s.folders] ?? h.folder}{h.page ? ` · ${s.common.page(h.page)}` : ''}</small>
-                <span><Highlight text={h.snippet} words={h.matched} /></span>
-              </button>
+              <div key={`${h.fileId}:${h.page ?? j}`} className="hit-result">
+                <button className="hit" onClick={() => onOpen(h.fileId, h.page)}>
+                  <strong>{h.fileName}</strong>
+                  <small>{s.folders[h.folder as keyof typeof s.folders] ?? h.folder}{h.page ? ` · ${s.common.page(h.page)}` : ''}</small>
+                  <span><Highlight text={h.snippet} words={h.matched} /></span>
+                </button>
+                {downloadAction(h.fileId, h.fileName)}
+              </div>
             ))}
             {m.confirm && (
               <div className="actions">
@@ -209,9 +270,12 @@ export default function Chat({ onOpen, onTab }: { onOpen: OpenFn; onTab: (tab: A
               <div className="cites">
                 <small>{s.chat.source}</small>
                 {m.citations.map((c) => (
-                  <button key={`${c.fileId}:${c.page}`} className="chip" onClick={() => onOpen(c.fileId, c.page)}>
-                    {c.fileName} · {s.folders[c.folder as keyof typeof s.folders] ?? c.folder}{c.page ? ` · ${s.common.pageShort(c.page)}` : ''}
-                  </button>
+                  <div key={`${c.fileId}:${c.page}`} className="citation-result">
+                    <button className="chip" onClick={() => onOpen(c.fileId, c.page)}>
+                      {c.fileName} · {s.folders[c.folder as keyof typeof s.folders] ?? c.folder}{c.page ? ` · ${s.common.pageShort(c.page)}` : ''}
+                    </button>
+                    {downloadAction(c.fileId, c.fileName)}
+                  </div>
                 ))}
               </div>
             )}

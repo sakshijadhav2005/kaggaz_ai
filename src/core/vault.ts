@@ -40,6 +40,10 @@ export class CapacitorVault implements VaultStore {
     await Filesystem.deleteFile({ path, directory: Directory.Data });
   }
 
+  async fileSize(path: string): Promise<number> {
+    return (await Filesystem.stat({ path, directory: Directory.Data })).size;
+  }
+
   async read(path: string, name: string) {
     const bytes = await this.cipher.decryptBytes(await this.readRaw(path));
     return new Blob([bytes], { type: mimeFor(name) });

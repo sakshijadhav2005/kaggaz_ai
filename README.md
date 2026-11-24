@@ -41,6 +41,9 @@ Without a key the app still imports, OCRs, sorts by rules and searches by folder
 
 ## Notes
 
+- **Appearance:** Settings uses a compact Theme dropdown for Warm light, Warm dark or Neon Glass. The selection is saved on the device; the header sun/moon button remains available for switching between light and dark.
+- **Sorting:** import extracts text, applies offline rules for ID cards, bills, receipts and medical documents, then uses Gemma 4 when no rule matches and a model is available. Without a confident result the file stays Unsorted; poor text extraction is marked for review. A manual folder choice is kept.
+- **Ask:** answers are instructed to stay brief and answer the requested fact. Mobile-number questions use the stored text directly and cite the source; document requests show matching file cards with a Download action.
 - **Importing:** the Library has two buttons. Import picks files (PDF, images, audio). Scan, in the Android app, opens Google's ML Kit document scanner (camera, edge detection, crop, multi-page) and imports the result as one PDF. In a browser, Scan opens the camera or file picker instead.
 - **OCR:** on a phone it uses ML Kit text recognition (Latin and Devanagari, works offline). In a browser, and as a backup if ML Kit fails, it uses Tesseract.js, whose language data downloads the first time it runs. If both read poorly and you are online, Gemma transcribes the image.
 - ML Kit adds several MB to the Android app, one model per script.
@@ -67,6 +70,7 @@ Online, the app uses the hosted Gemma 4 (31B). With no connection or key, or if 
 - **Encryption at rest:** everything stored is encrypted with AES-256-GCM (`src/core/crypto.ts`). The 256-bit key is created on first launch and kept in Android secure storage, protected by the Keystore (`src/core/keyStore.ts`). It is never in the code or the logs.
   - Database: file names, document text, search chunks, embeddings, bills and reminder titles. Folder, dates and flags stay plain so queries work.
   - Vault files: encrypted on disk and named by id only (`vault/<folder>/<id>.kgz`).
+  - The mobile Settings tab shows uploaded-file and PDF storage use. Vault files live in the app-private Capacitor `Directory.Data`, not the public Downloads folder; the displayed totals include Trash until files are permanently deleted.
   - Installs from before encryption are migrated once on launch (`src/core/encryptionMigration.ts`).
   - In a browser the key falls back to localStorage, which is not secure. Use the browser for development only.
   - Android backup is off (`allowBackup="false"`): the Keystore key cannot be backed up, so a restored copy could not be decrypted anyway.
@@ -121,6 +125,7 @@ Besides questions, the Ask tab carries out commands: "move my PAN card to Study"
   - Documents in Trash cannot be acted on.
   - Moving a file to Trash waits for the user's Confirm.
   - Delete forever and Empty trash are not actions, so the assistant cannot do them.
+- Ask results and answer citations have a Download action. Browsers download the decrypted file directly; Android opens the share sheet so the user can save a copy elsewhere.
 - **Adding an action:** add a `defineAction` to `buildRegistry`, list its id in a skill, and add a test in `tests/agent.test.ts`. The test "every skill names only registered actions" catches typos.
 
 ## PDF tools

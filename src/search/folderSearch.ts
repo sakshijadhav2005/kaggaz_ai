@@ -7,7 +7,7 @@ import type { Folder } from '../models';
 export const FOLDER_SYNONYMS: Partial<Record<Folder, string[]>> = {
   Aadhaar: ['aadhaar', 'aadhar', 'adhar', 'uidai', 'आधार'],
   PAN: ['pan', 'pancard'],
-  Bills: ['bill', 'bills', 'electricity'],
+  Bills: ['bill', 'bills', 'electricity', 'utility', 'utilities'],
   Receipts: ['receipt', 'receipts', 'invoice', 'invoices'],
   Medical: ['medical', 'prescription', 'prescriptions', 'rx'],
   Study: ['study', 'notes'],
@@ -24,6 +24,23 @@ const STOPWORDS = new Set([
   'files', 'please', 'and', 'to', 'in', 'list', 'all', 'from', 'with', 'that', 'this', 'also',
   'tell', 'what', 'whats', 'where', 'when', 'who', 'how', 'which', 'are', 'was', 'were', 'does',
   'did', 'fetch', 'data', 'details', 'into', 'about',
+]);
+
+const FILE_ACTIONS = new Set([
+  'give', 'show', 'find', 'get', 'open', 'download', 'send', 'share', 'export', 'attach', 'fetch',
+  'retrieve', 'save', 'print', 'provide', 'want', 'need', 'have', 'bring', 'दिखाओ', 'दिखाइए', 'दो',
+  'दे', 'दीजिए', 'डाउनलोड', 'भेजो', 'भेजिए', 'खोलो', 'खोलिए', 'निकालो', 'लाइए',
+]);
+const FILE_TYPES = new Set([
+  'document', 'documents', 'doc', 'docs', 'file', 'files', 'pdf', 'attachment', 'attachments',
+  'resume', 'cv', 'report', 'reports', 'receipt', 'receipts', 'invoice', 'invoices', 'bill', 'bills',
+  'card', 'cards', 'notes', 'scan', 'copy', 'दस्तावेज़', 'फ़ाइल', 'फाइल', 'फ़ाइलें', 'फाइलें',
+  'पीडीएफ', 'रिपोर्ट', 'रसीद', 'बिल', 'कार्ड', 'रिज़्यूमे',
+]);
+const FIELD_TERMS = new Set([
+  'mobile', 'cell', 'phone', 'telephone', 'contact', 'number', 'email', 'address', 'amount', 'total',
+  'balance', 'due', 'date', 'expiry', 'status', 'नंबर', 'मोबाइल', 'मोबाईल', 'फोन', 'फ़ोन', 'संपर्क',
+  'ईमेल', 'पता', 'राशि', 'तारीख', 'देय',
 ]);
 
 export const tokenize = (s: string): string[] =>
@@ -47,8 +64,13 @@ export function isQuestion(query: string): boolean {
   return first !== undefined && QUESTION_STARTS.has(first);
 }
 
-/** "give me Aadhaar card": name a folder without asking anything, so return the files themselves. */
-export const isFileRequest = (query: string): boolean => !isQuestion(query) && folderForQuery(query) !== null;
+/** Explicit document requests return file cards; field questions stay with content search. */
+export function isFileRequest(query: string): boolean {
+  const tokens = tokenize(query);
+  const asksForFile = tokens.some((t) => FILE_ACTIONS.has(t)) && tokens.some((t) => FILE_TYPES.has(t));
+  if (asksForFile && !tokens.some((t) => FIELD_TERMS.has(t))) return true;
+  return !isQuestion(query) && !tokens.some((t) => FIELD_TERMS.has(t)) && folderForQuery(query) !== null;
+}
 
 /** Words worth matching against stored text when no folder matches. */
 export const keywordTokens = (query: string): string[] =>

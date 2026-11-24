@@ -39,6 +39,7 @@ describe('folder search', () => {
     expect(folderForQuery('adhar')).toBe('Aadhaar');
     expect(folderForQuery('मेरा आधार दिखाओ')).toBe('Aadhaar');
     expect(folderForQuery('show my pan card')).toBe('PAN');
+    expect(folderForQuery('my utility bill')).toBe('Bills');
     expect(folderForQuery('company holiday')).toBeNull(); // "pan" must not match inside words
   });
 
@@ -82,6 +83,13 @@ describe('content search (your resume scenario)', () => {
 
   it('only lists a folder\'s files for plain file requests', () => {
     expect(isFileRequest('give me Aadhaar card')).toBe(true);
+    expect(isFileRequest('मुझे आधार कार्ड दिखाओ')).toBe(true);
+    expect(isFileRequest('मुझे आधार नंबर बताओ')).toBe(false);
+    expect(isFileRequest('download Sakshi Jadhav resume.pdf')).toBe(true);
+    expect(isFileRequest('Can you send my resume?')).toBe(true);
+    expect(isFileRequest('show me the document')).toBe(true);
+    expect(isFileRequest('give me the mobile number of Sakshi Jadhav')).toBe(false);
+    expect(isFileRequest('give me Aadhaar number')).toBe(false);
     expect(isFileRequest('sakshi jadhav email id')).toBe(false);
     expect(isFileRequest('what is the pan number?')).toBe(false);
   });
@@ -92,6 +100,13 @@ describe('rules', () => {
     const r = rules.classifySync('scan.jpg', 'Government of India UIDAI Aadhaar 1234 5678 9012');
     expect(r?.folder).toBe('Aadhaar');
     expect(r?.confidence).toBe(0.9);
+  });
+
+  it('recognizes lowercase PAN text and does not treat a generic amount as a bill marker', () => {
+    expect(rules.classifySync('scan.jpg', 'Permanent Account Number abcde1234f')?.folder).toBe('PAN');
+    expect(rules.classifySync('receipt.jpg', 'Retail receipt. GST 18%. Amount payable Rs 500.')?.folder).toBe('Receipts');
+    expect(rules.classifySync('bill.pdf', 'Electricity bill. Units consumed 230. GST 18%.')?.folder).toBe('Bills');
+    expect(rules.classifySync('units.jpg', 'Units consumed: 230')?.folder).toBe('Bills');
   });
 
   it('filename is a weak signal', () => {
@@ -133,7 +148,7 @@ describe('smart sorter', () => {
     const gemma = new FakeGemma({ folder: 'Study', confidence: 0.8, source: 'gemma' });
     const online = new SmartSorter(rules, () => true, gemma);
     expect((await online.decide(file('n.pdf'), 'lecture notes on thermodynamics')).folder).toBe('Study');
-    await online.decide(file('d.pdf'), 'amount payable 100');
+    await online.decide(file('d.pdf'), 'Electricity bill. Units consumed 100.');
     expect(gemma.calls).toBe(1);
 
     const offline = new SmartSorter(rules, () => false, gemma);
@@ -210,6 +225,7 @@ describe('citations', () => {
     expect(p).toContain('[1] first');
     expect(p).toContain('[2] second');
     expect(p).toContain(ANSWER_PROMPT);
+    expect(ANSWER_PROMPT).toContain('one brief sentence');
   });
 });
 

@@ -11,6 +11,7 @@ import { loadCipher } from './core/keyStore';
 import { IngestService } from './core/ingestService';
 import { buildNamePrompt, heuristicName, parseSuggestedName } from './core/naming';
 import { LocalReminderScheduler } from './core/scheduler';
+import { summarizeStorage, type StorageDetails } from './core/storage';
 import { CapacitorVault } from './core/vault';
 import { AudioExtractor } from './extract/audioExtractor';
 import { MlKitEngine } from './extract/mlkitEngine';
@@ -36,6 +37,7 @@ export const isOnline = () => navigator.onLine;
 
 export interface Services {
   read: (f: { path: string; name: string }) => Promise<Blob>;
+  storageDetails: () => Promise<StorageDetails>;
   /** Embeds chunks imported earlier without a key or connection. Safe to call often. */
   embedMissing: () => Promise<void>;
   /** General-knowledge reply for questions the user's files do not cover. */
@@ -122,6 +124,11 @@ export async function initServices(): Promise<Services> {
   });
   instance = {
     read,
+    storageDetails: async () => {
+      const files = await db.allFilesIncludingTrash();
+      const entries = await Promise.all(files.map(async (file) => ({ type: file.type, bytes: await vault.fileSize(file.path) })));
+      return summarizeStorage(entries);
+    },
     embedMissing: () => indexer.embedMissing(),
     general: (q) => llm.complete(buildGeneralPrompt(q)),
     local,

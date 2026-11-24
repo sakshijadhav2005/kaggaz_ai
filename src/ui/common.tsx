@@ -37,17 +37,33 @@ export const fmtMoney = (n: number) => `Rs ${n.toLocaleString('en-IN', { minimum
 
 /** Opens the Settings screen from any tab's header. Provided by App. */
 export const SettingsContext = createContext<(() => void) | null>(null);
+export type AppTheme = 'light' | 'dark' | 'neon';
+export const ThemeContext = createContext<{
+  theme: AppTheme;
+  toggle: () => void;
+  setTheme: (theme: AppTheme) => void;
+} | null>(null);
 
 /** A page header; [children] become buttons on the right, followed by Settings. */
 export function Header({ title, children }: { title: string; children?: ReactNode }) {
   const s = useT();
   const openSettings = useContext(SettingsContext);
+  const theme = useContext(ThemeContext);
   return (
     <IonHeader>
       <IonToolbar>
         <IonTitle>{title}</IonTitle>
         <IonButtons slot="end">
           {children}
+          {theme && (
+            <IonButton
+              aria-label={theme.theme === 'light' ? s.theme.switchToDark : s.theme.switchToLight}
+              title={theme.theme === 'light' ? s.theme.switchToDark : s.theme.switchToLight}
+              onClick={theme.toggle}
+            >
+              <Icon name={theme.theme === 'light' ? 'moon' : 'sun'} />
+            </IonButton>
+          )}
           {openSettings && (
             <IonButton aria-label={s.library.settings} title={s.library.settings} onClick={openSettings}>
               <Icon name="gear" />

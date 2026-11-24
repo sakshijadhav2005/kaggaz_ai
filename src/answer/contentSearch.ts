@@ -1,6 +1,6 @@
 import { en, type Strings } from '../i18n/en';
 import type { SnippetHit } from '../search/snippets';
-import { NOT_FOUND, type Answer, type Citation } from './answerer';
+import { findMobileNumber, isMobileNumberQuestion, mobileNumberSubject, NOT_FOUND, type Answer, type Citation } from './answerer';
 
 export interface ContentSearchDeps {
   online: boolean;
@@ -31,6 +31,22 @@ export interface ContentResult {
  */
 /** [m] is the message text in the user's language; English by default. */
 export async function searchContent(q: string, d: ContentSearchDeps, m: Strings['search'] = en.search): Promise<ContentResult> {
+  if (isMobileNumberQuestion(q)) {
+    let passages = await d.findPassages(q);
+    let match = findMobileNumber(q, passages);
+    const subject = mobileNumberSubject(q);
+    if (!match && subject) {
+      passages = await d.findPassages(subject);
+      match = findMobileNumber(q, passages);
+    }
+    if (!match) return { text: m.notFound };
+    const source = passages[match.passageIndex];
+    return {
+      text: m.mobileNumber(match.number),
+      citations: [{ fileId: source.fileId, fileName: source.fileName, folder: source.folder, page: source.page }],
+    };
+  }
+
   const hostedUsable = d.online && d.hasKey;
   let hosted: 'unavailable' | 'notfound' | 'failed' = 'unavailable';
   let note = '';
