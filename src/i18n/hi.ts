@@ -92,7 +92,7 @@ export const hi: Strings = {
     fileCount: (n) => `${n} फ़ाइलें`,
     totalUsed: 'कुल फ़ाइल स्टोरेज',
     pdfs: 'PDF फ़ाइलें',
-    pdfCount: (n) => `${n} PDF`,
+    pdfCount: (n) => `${n} पीडीएफ़`,
     pdfUsed: 'PDF स्टोरेज',
     location: 'अपलोड की गई फ़ाइलें इस डिवाइस में ऐप के निजी स्टोरेज में रहती हैं:',
     encryption: 'फ़ाइलें एन्क्रिप्टेड हैं और सार्वजनिक Downloads फ़ोल्डर में नहीं हैं। कॉपी बाहर रखने के लिए Backup इस्तेमाल करें।',

@@ -11,7 +11,7 @@ const safeName = (name: string) => name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_
 
 /** Downloads in a browser; on mobile, opens the system share sheet so the user can save the decrypted file. */
 export async function exportStoredFile(file: StoredFile, read: (f: { path: string; name: string }) => Promise<Blob>): Promise<void> {
-  const blob = await read(file);
+  const blob = await read({ path: file.path, name: file.name });
   const name = safeName(file.name);
   if (!Capacitor.isNativePlatform()) {
     const url = URL.createObjectURL(blob);

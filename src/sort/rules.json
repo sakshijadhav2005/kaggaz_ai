@@ -1,7 +1,7 @@
 [
   { "folder": "Aadhaar", "all": [ { "any_text": ["UIDAI", "Aadhaar", "आधार"] }, { "regex": "\\b\\d{4}\\s?\\d{4}\\s?\\d{4}\\b" } ] },
   { "folder": "PAN",     "all": [ { "regex": "\\b[A-Za-z]{5}[0-9]{4}[A-Za-z]\\b" } ] },
-  { "folder": "Bills",   "all": [ { "any_text": ["bill", "electricity", "utility", "amount payable", "due date", "units consumed"] } ], "any": [ { "any_text": ["units consumed", "bill no", "bill number", "electricity bill", "utility bill", "billing period", "bill date"] } ] },
+  { "folder": "Bills",   "all": [ { "any_text": ["bill", "electricity", "utility", "amount payable", "due date", "units consumed"] } ], "any": [ { "any_text": ["units consumed", "bill no", "bill number", "electricity bill", "utility bill", "billing period", "bill date"] }, { "all_text": ["tata power", "amount payable", "due date"] } ] },
   { "folder": "Receipts","any": [ { "any_text": ["invoice", "GST", "total amount", "receipt"] } ] },
   { "folder": "Medical", "any": [ { "any_text": ["prescription", "diagnosis", "lab report", "Rx"] } ] }
 ]

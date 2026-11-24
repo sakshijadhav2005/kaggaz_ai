@@ -109,6 +109,11 @@ describe('rules', () => {
     expect(rules.classifySync('units.jpg', 'Units consumed: 230')?.folder).toBe('Bills');
   });
 
+  it('recognizes a utility bill from its provider and payment details', () => {
+    expect(rules.classifySync('scan.jpg', 'Tata Power Amount Payable 100 Due Date 01/01/2099')?.folder).toBe('Bills');
+    expect(rules.classifySync('scan.jpg', 'Tata Power account notice with a due date')?.folder).toBeUndefined();
+  });
+
   it('filename is a weak signal', () => {
     const r = rules.classifySync('aadhar_front.jpg', 'blurry nothing');
     expect(r?.folder).toBe('Aadhaar');

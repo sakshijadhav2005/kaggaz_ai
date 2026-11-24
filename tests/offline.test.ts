@@ -456,14 +456,16 @@ describe('searching file content', () => {
   });
 
   it('answers a mobile-number request with only the matching number and a downloadable source citation', async () => {
+    const findPassages = vi.fn(async () => [hit('Sakshi_Jadhav_Resume.pdf', 'Sakshi Jadhav\nPhone: +91 98765 43210')]);
     const r = await searchContent(
       'What is the mobile number of Sakshi Jadhav?',
-      deps({ findPassages: async () => [hit('Sakshi_Jadhav_Resume.pdf', 'Sakshi Jadhav\nPhone: +91 98765 43210')] }),
+      deps({ findPassages }),
     );
     expect(r.text).toBe('Mobile number: 9876543210.');
     expect(r.citations).toEqual([{ fileId: 'f1', fileName: 'Sakshi_Jadhav_Resume.pdf', folder: 'Other', page: 1 }]);
     expect(r.snippets).toBeUndefined();
-    expect(log).toEqual(['passages']);
+    expect(findPassages).toHaveBeenCalledOnce();
+    expect(findPassages).toHaveBeenCalledWith('What is the mobile number of Sakshi Jadhav?');
   });
 
   it('retries a one-word person search so the mobile answer does not need Gemma', async () => {
@@ -483,13 +485,19 @@ describe('searching file content', () => {
   });
 
   it('does not answer a mobile-number request from an unrelated number or ID', async () => {
+    const queries: string[] = [];
     const r = await searchContent(
       'What is the mobile number of Sakshi Jadhav?',
-      deps({ findPassages: async () => [hit('ID.pdf', 'Someone else. Mobile: 98765 43210. Aadhaar: 1234 5678 9012.')] }),
+      deps({
+        findPassages: async (q) => {
+          queries.push(q);
+          return [hit('ID.pdf', 'Someone else. Mobile: 98765 43210. Aadhaar: 1234 5678 9012.')];
+        },
+      }),
     );
     expect(r.text).toBe(NOT_FOUND);
     expect(r.citations).toBeUndefined();
-    expect(log).toEqual(['passages']);
+    expect(queries).toEqual(['What is the mobile number of Sakshi Jadhav?', 'sakshi jadhav']);
   });
 
   it('offline with Gemma 4 on the device: writes an answer from the matching passages', async () => {

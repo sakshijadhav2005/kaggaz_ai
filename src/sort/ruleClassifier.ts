@@ -7,6 +7,7 @@ const FILENAME_CONFIDENCE = 0.6;
 
 interface ConditionJson {
   any_text?: string[];
+  all_text?: string[];
   regex?: string;
 }
 
@@ -18,15 +19,18 @@ export interface RuleJson {
 
 class Condition {
   private anyText?: string[];
+  private allText?: string[];
   private regex?: RegExp;
 
   constructor(json: ConditionJson) {
     this.anyText = json.any_text?.map((t) => t.toLowerCase());
+    this.allText = json.all_text?.map((t) => t.toLowerCase());
     this.regex = json.regex ? new RegExp(json.regex) : undefined;
   }
 
   matches(text: string, lower: string): boolean {
     if (this.anyText) return this.anyText.some((t) => lower.includes(t));
+    if (this.allText) return this.allText.every((t) => lower.includes(t));
     return this.regex?.test(text) ?? false;
   }
 }
