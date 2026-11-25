@@ -17,6 +17,8 @@ export interface LocalModelView {
   downloadPercent(): number | null;
   /** The last download error, or an empty string. */
   lastError(): string;
+  /** Why a running download is paused ('network', 'wifi', 'retry', 'paused'), or an empty string. */
+  downloadPause(): string;
   /** Why the downloaded model could not start (for example, not enough memory), or an empty string. */
   loadError(): string;
   /** Start the downloaded model again without downloading it again. */

@@ -19,6 +19,7 @@ export default function OfflineModel({ model, variant }: Props) {
   useEffect(() => model.subscribe(refresh), [model]);
 
   const percent = model.downloadPercent();
+  const pause = model.downloadPause();
   const error = model.lastError();
   const loadError = model.loadError();
   // Errors are read back from the model, so a failed start needs no handling here.
@@ -43,6 +44,7 @@ export default function OfflineModel({ model, variant }: Props) {
           <strong>{s.offline.downloading(percent)}</strong>
         </p>
         <progress max={100} value={percent} aria-label={s.offline.progressLabel} />
+        {pause && <p className="hint">{s.offline.paused[pause] ?? s.offline.paused.paused}</p>}
         <small>{s.offline.keepWifi}</small>
       </>
     );

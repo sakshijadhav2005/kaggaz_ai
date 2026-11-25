@@ -19,9 +19,12 @@ const fake = vi.hoisted(() => {
     failDownload: false,
     /** When set, setModel rejects the way the real plugin does: `{ message, code: <real reason> }`. */
     failLoad: '',
-    /** Fractions of the model file that exist on disk, one per step of the fake download. */
+    /** Fractions of the model file downloaded, one per status read while the fake download runs. */
     steps: [1] as number[],
-    fileSize: 0,
+    /** Status reads so far for the current download. */
+    reads: 0,
+    /** Pause reason reported by the first status read, if any. */
+    pauseFirst: '',
     modelBytes: 0,
     active: 0,
     maxActive: 0,
@@ -46,32 +49,29 @@ const fake = vi.hoisted(() => {
       state.maxActive = Math.max(state.maxActive, state.active);
       queueMicrotask(() => state.onSend(chatId, message));
     },
-    downloadModel: async () => {
+  };
+  /** A stand-in for Android's DownloadManager plugin. */
+  const downloader = {
+    start: async () => {
       state.downloads++;
-      state.fileSize = 0;
-      for (const f of state.steps) {
-        await new Promise((r) => setTimeout(r, 25));
-        state.fileSize = Math.floor(state.modelBytes * f);
+      state.reads = 0;
+      return { id: `d${state.downloads}` };
+    },
+    status: async () => {
+      const i = state.reads++;
+      const bytes = (f: number) => Math.floor(state.modelBytes * f);
+      if (i < state.steps.length) {
+        const paused = i === 0 && state.pauseFirst;
+        return { state: paused ? 'paused' : 'running', bytes: bytes(state.steps[i]), total: state.modelBytes, reason: paused || '', path: '' } as const;
       }
-      if (state.failDownload) throw new Error('HTTP 401: sign in to Hugging Face');
-      emit('downloadProgress', { progress: 7 });
-      return { path: '/data/gemma-4-E2B-it.litertlm' };
+      if (state.failDownload) return { state: 'failed', bytes: 0, total: -1, reason: 'The server refused the download (HTTP 401).', path: '' } as const;
+      return { state: 'done', bytes: bytes(state.steps.at(-1)!), total: state.modelBytes, reason: '', path: '/ext/gemma-4-E2B-it.litertlm' } as const;
     },
   };
-  return { CapgoLLM, emit, state };
+  return { CapgoLLM, downloader, emit, state };
 });
 vi.mock('@capgo/capacitor-llm', () => ({ CapgoLLM: fake.CapgoLLM }));
-vi.mock('@capacitor/filesystem', () => ({
-  Directory: { Data: 'DATA' },
-  Filesystem: {
-    // Like the real plugin: fails while the file does not exist yet.
-    stat: async () => {
-      if (fake.state.fileSize === 0) throw new Error('File does not exist');
-      return { size: fake.state.fileSize };
-    },
-  },
-}));
-vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: () => 'android' } }));
+vi.mock('@capacitor/core', () => ({ Capacitor: { getPlatform: () => 'android' }, registerPlugin: () => ({}) }));
 
 const memoryStore = () => {
   const m = new Map<string, string>();
@@ -113,8 +113,8 @@ describe('on-device Gemma 4 client', () => {
   let client: OnDeviceLlmClient;
 
   beforeEach(() => {
-    Object.assign(fake.state, { chats: 0, downloads: 0, failDownload: false, failLoad: '', steps: [1], fileSize: 0, modelBytes: LOCAL_MODEL.bytes, active: 0, maxActive: 0, sent: [], modelCalls: [], onSend: () => {} });
-    client = new OnDeviceLlmClient(memoryStore(), 5); // read the file size every 5 ms
+    Object.assign(fake.state, { chats: 0, downloads: 0, failDownload: false, failLoad: '', steps: [1], reads: 0, pauseFirst: '', modelBytes: LOCAL_MODEL.bytes, active: 0, maxActive: 0, sent: [], modelCalls: [], onSend: () => {} });
+    client = new OnDeviceLlmClient(memoryStore(), 5, fake.downloader); // read progress every 5 ms
   });
 
   /** Plays a reply as the plugin would: text events, then aiFinished. */
@@ -134,9 +134,9 @@ describe('on-device Gemma 4 client', () => {
   it('downloads the model, reports progress, and loads it as litertlm', async () => {
     const seen: number[] = [];
     await client.download((p) => seen.push(p));
-    expect(seen).toEqual([7]);
+    expect(seen).toEqual([99]); // 100 is for when the model is ready
     expect(client.isInstalled()).toBe(true);
-    expect(fake.state.modelCalls[0]).toMatchObject({ path: '/data/gemma-4-E2B-it.litertlm', modelType: 'litertlm' });
+    expect(fake.state.modelCalls[0]).toMatchObject({ path: '/ext/gemma-4-E2B-it.litertlm', modelType: 'litertlm' });
   });
 
   it('shares one download between callers, and reports progress to subscribers', async () => {
@@ -147,7 +147,7 @@ describe('on-device Gemma 4 client', () => {
     off();
     expect(fake.state.downloads).toBe(1);
     expect(seen).toContain(0);
-    expect(seen).toContain(7);
+    expect(seen).toContain(99);
     expect(seen.at(-1)).toBeNull(); // finished
     expect(client.downloadPercent()).toBeNull();
     expect(client.lastError()).toBe('');
@@ -166,17 +166,59 @@ describe('on-device Gemma 4 client', () => {
     expect(client.isInstalled()).toBe(true);
   });
 
-  it('shows real progress for a file over 2 GB, where the plugin reports none', async () => {
-    // The plugin reads the size as a 32-bit number, so it sends no progress events for this model.
+  it('reports progress from the bytes downloaded, never going backwards', async () => {
     fake.state.steps = [0.2, 0.5, 0.8, 1];
     const seen: number[] = [];
     await client.download((p) => seen.push(p));
-    const fromFile = seen.filter((p) => p !== 7); // 7 is the plugin's own (fake) event
-    const near = (n: number) => fromFile.some((p) => Math.abs(p - n) <= 1);
-    expect(near(20) && near(50) && near(80)).toBe(true);
-    expect(Math.max(...fromFile)).toBeLessThan(100); // 100 is only for "done"
-    expect(fromFile).toEqual([...fromFile].sort((a, b) => a - b)); // never goes backwards
+    expect(seen).toEqual([19, 50, 79, 99]); // rounded down, so it never shows more than is there
     expect(client.isInstalled()).toBe(true);
+  });
+
+  it('says why a download is paused, and clears it when done', async () => {
+    fake.state.pauseFirst = 'network';
+    const pauses: string[] = [];
+    const off = client.subscribe(() => pauses.push(client.downloadPause()));
+    fake.state.steps = [0.1, 0.5, 1];
+    await client.download();
+    off();
+    expect(pauses).toContain('network');
+    expect(client.downloadPause()).toBe('');
+  });
+
+  it('rejoins a download that was running when the app closed, without starting another', async () => {
+    const store = memoryStore();
+    store.setItem('kaagaz_local_model_download', 'd41');
+    const resumed = new OnDeviceLlmClient(store, 5, fake.downloader);
+    resumed.resumePending();
+    await resumed.download(); // joins the resumed one
+    expect(fake.state.downloads).toBe(0);
+    expect(resumed.isInstalled()).toBe(true);
+    expect(store.getItem('kaagaz_local_model_download')).toBeNull();
+  });
+
+  it('starts again when the saved download has failed', async () => {
+    const store = memoryStore();
+    store.setItem('kaagaz_local_model_download', 'd41');
+    fake.state.steps = [];
+    fake.state.failDownload = true;
+    const status = fake.downloader.status;
+    let first = true;
+    const downloader = {
+      start: fake.downloader.start,
+      status: async () => {
+        if (first) {
+          first = false;
+          return { state: 'failed', bytes: 0, total: -1, reason: 'old', path: '' } as const;
+        }
+        fake.state.failDownload = false;
+        fake.state.steps = [1];
+        return status();
+      },
+    };
+    const c = new OnDeviceLlmClient(store, 5, downloader);
+    await c.download();
+    expect(fake.state.downloads).toBe(1);
+    expect(c.isInstalled()).toBe(true);
   });
 
   it('refuses a download that stopped early', async () => {
@@ -265,8 +307,8 @@ describe('on-device Gemma 4 client', () => {
 describe('why the on-device model fails to start', () => {
   let client: OnDeviceLlmClient;
   beforeEach(() => {
-    Object.assign(fake.state, { chats: 0, downloads: 0, failDownload: false, failLoad: '', steps: [1], fileSize: 0, modelBytes: LOCAL_MODEL.bytes, active: 0, maxActive: 0, sent: [], modelCalls: [], onSend: () => {} });
-    client = new OnDeviceLlmClient(memoryStore(), 5);
+    Object.assign(fake.state, { chats: 0, downloads: 0, failDownload: false, failLoad: '', steps: [1], reads: 0, pauseFirst: '', modelBytes: LOCAL_MODEL.bytes, active: 0, maxActive: 0, sent: [], modelCalls: [], onSend: () => {} });
+    client = new OnDeviceLlmClient(memoryStore(), 5, fake.downloader);
   });
 
   it('errorText shows the real reason, which the plugin puts in `code`', () => {
@@ -497,7 +539,7 @@ describe('searching file content', () => {
     );
     expect(r.text).toBe(NOT_FOUND);
     expect(r.citations).toBeUndefined();
-    expect(queries).toEqual(['What is the mobile number of Sakshi Jadhav?', 'sakshi jadhav']);
+    expect(queries).toEqual(['What is the mobile number of Sakshi Jadhav?', 'sakshi jadhav', 'sakshi jadhav']);
   });
 
   it.each([
@@ -525,7 +567,15 @@ describe('searching file content', () => {
       'Rahul Patil, House 45, MG Road, Camp Area, Nashik, Maharashtra 422001, India. Office reception desk.\nMobile: 98220 11223\n' +
       'Asha More, Plot 7, Station Road, Satara, Maharashtra 415001, India. Branch office reception.\nMobile: 99887 76655');
     const r = await searchContent('mobile number of sakshi jadhav', deps({ findPassages: async () => [list], allPassages: async () => [list] }));
-    expect(r.text).toBe(NOT_FOUND);
+    expect(r.text).toContain('no mobile number');
+    expect(r.text).not.toMatch(/\d{5}/);
+  });
+
+  it('names the file that mentions the person when it has no mobile number', async () => {
+    const card = hit('scan.pdf', 'Government of India\nSakshi Jadhav\nDOB: 12/04/2001\n4567 8912 3456');
+    const r = await searchContent('give me sakshi mobile no', deps({ findPassages: async () => [card], allPassages: async () => [card] }));
+    expect(r.text).toContain('I found Sakshi in your files, but no mobile number');
+    expect(r.citations?.[0].fileName).toBe('scan.pdf');
   });
 
   it('does not take an unlabelled number from an ID card as its mobile number', async () => {

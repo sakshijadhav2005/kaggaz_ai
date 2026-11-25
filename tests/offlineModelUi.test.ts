@@ -6,11 +6,12 @@ import { describe, expect, it } from 'vitest';
 import type { LocalModelView } from '../src/llm/localModel';
 import OfflineModel from '../src/ui/OfflineModel';
 
-const model = (over: Partial<Record<'supported' | 'installed' | 'percent' | 'error' | 'loadError', unknown>> = {}): LocalModelView => ({
+const model = (over: Partial<Record<'supported' | 'installed' | 'percent' | 'error' | 'loadError' | 'pause', unknown>> = {}): LocalModelView => ({
   isSupported: () => (over.supported ?? true) as boolean,
   isInstalled: () => (over.installed ?? false) as boolean,
   downloadPercent: () => (over.percent ?? null) as number | null,
   lastError: () => (over.error ?? '') as string,
+  downloadPause: () => (over.pause ?? '') as string,
   loadError: () => (over.loadError ?? '') as string,
   retryLoad: async () => undefined,
   redownload: async () => undefined,

@@ -1,5 +1,4 @@
-import { Capacitor } from '@capacitor/core';
-import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { CapgoLLM } from '@capgo/capacitor-llm';
 
 import type { LlmClient } from '../interfaces';
@@ -8,6 +7,26 @@ import { LOCAL_MODEL, type LocalModelView } from './localModel';
 export { LOCAL_MODEL };
 
 const PATH_KEY = 'kaagaz_local_model_path';
+/** The Android download in progress, so a download started before the app closed is picked up again. */
+const DOWNLOAD_KEY = 'kaagaz_local_model_download';
+
+export interface DownloadStatus {
+  state: 'pending' | 'running' | 'paused' | 'done' | 'failed' | 'missing';
+  bytes: number;
+  /** -1 until the server has said. */
+  total: number;
+  /** Why it failed, or why it is paused ('network', 'wifi', 'retry', 'paused'). */
+  reason: string;
+  path: string;
+}
+
+/** Android's DownloadManager (android/app/src/main/java/app/kaagaz/ModelDownloadPlugin.java). */
+export interface BackgroundDownloader {
+  start(o: { url: string; filename: string; title: string; description: string }): Promise<{ id: string }>;
+  status(o: { id: string }): Promise<DownloadStatus>;
+}
+
+const nativeDownloader = (): BackgroundDownloader => registerPlugin<BackgroundDownloader>('ModelDownload');
 const TIMEOUT_MS = 180_000;
 
 /**
@@ -56,11 +75,19 @@ export class OnDeviceLlmClient implements LlmClient, LocalModelView {
 
   private chatsSinceLoad = 0;
 
-  /** [pollMs] is how often download progress is read from the file on disk. */
+  /** [pollMs] is how often the download's progress is read. */
   constructor(
     private store: KeyValueStore = defaultStore(),
     private pollMs = 1000,
+    private downloader: BackgroundDownloader = nativeDownloader(),
   ) {}
+
+  /** Picks up a download that was running when the app closed. Call once at startup. */
+  resumePending(): void {
+    if (this.isSupported() && !this.isInstalled() && this.store.getItem(DOWNLOAD_KEY)) {
+      void this.download().catch(() => undefined);
+    }
+  }
 
   /** Only the Android app can run the model. */
   isSupported = () => Capacitor.getPlatform() === 'android';
@@ -80,6 +107,8 @@ export class OnDeviceLlmClient implements LlmClient, LocalModelView {
 
   downloadPercent = () => this.percent;
   lastError = () => this.error;
+  private pause = '';
+  downloadPause = () => this.pause;
 
   /** Why the downloaded model could not start, or an empty string. */
   private startError = '';
@@ -112,6 +141,7 @@ export class OnDeviceLlmClient implements LlmClient, LocalModelView {
     this.inflight ??= this.fetchModel(onProgress).finally(() => {
       this.inflight = null;
       this.percent = null;
+      this.pause = '';
       this.notify();
     });
     return this.inflight;
@@ -128,39 +158,60 @@ export class OnDeviceLlmClient implements LlmClient, LocalModelView {
       onProgress?.(percent);
       this.notify();
     };
-    const handle = await CapgoLLM.addListener('downloadProgress', (e) => report(e.progress));
-    // The plugin reads the file size as a 32-bit number, so for a file over 2 GB it never reports progress.
-    // Instead, watch the partial file grow. It never reaches 100 here: that is for when the download is done.
-    const watcher = setInterval(() => void this.readProgress(report), this.pollMs);
     try {
-      const { path } = await CapgoLLM.downloadModel({ url: LOCAL_MODEL.url, filename: LOCAL_MODEL.filename });
-      await this.checkComplete();
+      const path = await this.transfer(report);
       this.store.setItem(PATH_KEY, path);
       this.loaded = false;
       await this.ensureLoaded();
     } catch (e) {
       this.error = errorText(e);
       throw e;
-    } finally {
-      clearInterval(watcher);
-      await handle.remove();
     }
   }
 
-  private async readProgress(report: (percent: number) => void): Promise<void> {
-    try {
-      const { size } = await Filesystem.stat({ path: LOCAL_MODEL.filename, directory: Directory.Data });
-      report(Math.max(this.percent ?? 0, Math.min(99, Math.floor((size * 100) / LOCAL_MODEL.bytes))));
-    } catch {
-      // The file does not exist yet.
+  /**
+   * Android's DownloadManager does the transfer, so it carries on with the app in the background or
+   * the screen off, and retries when the network drops. This only starts it (or rejoins the one already
+   * running) and reads its progress. Resolves with the file's path once the whole file is there.
+   */
+  private async transfer(report: (percent: number) => void): Promise<string> {
+    let id = this.store.getItem(DOWNLOAD_KEY);
+    if (id) {
+      const { state } = await this.downloader.status({ id });
+      if (state === 'failed' || state === 'missing') id = null;
     }
-  }
+    if (!id) {
+      ({ id } = await this.downloader.start({
+        url: LOCAL_MODEL.url,
+        filename: LOCAL_MODEL.filename,
+        title: `${LOCAL_MODEL.name} for Kaagaz`,
+        description: `Offline model, ${LOCAL_MODEL.sizeLabel}`,
+      }));
+      this.store.setItem(DOWNLOAD_KEY, id);
+    }
 
-  /** A connection that drops can leave a short file behind; a model that size would not load or would give garbage. */
-  private async checkComplete(): Promise<void> {
-    const { size } = await Filesystem.stat({ path: LOCAL_MODEL.filename, directory: Directory.Data });
-    if (size < LOCAL_MODEL.bytes) {
-      throw new Error(`The download stopped early (${Math.round((size * 100) / LOCAL_MODEL.bytes)}%). Try again on a stable connection.`);
+    for (;;) {
+      const s = await this.downloader.status({ id });
+      if (s.state === 'done') {
+        this.store.removeItem(DOWNLOAD_KEY);
+        // A model cut short would not load, or would give garbage.
+        if (s.bytes < LOCAL_MODEL.bytes) {
+          throw new Error(`The download stopped early (${Math.round((s.bytes * 100) / LOCAL_MODEL.bytes)}%). Try again on a stable connection.`);
+        }
+        return s.path;
+      }
+      if (s.state === 'failed' || s.state === 'missing') {
+        this.store.removeItem(DOWNLOAD_KEY);
+        throw new Error(s.reason || 'The download failed. Try again.');
+      }
+      const pause = s.state === 'paused' ? s.reason : '';
+      if (pause !== this.pause) {
+        this.pause = pause;
+        this.notify();
+      }
+      // 100 is for when the model is ready, and progress never goes backwards.
+      report(Math.max(this.percent ?? 0, Math.min(99, Math.floor((s.bytes * 100) / LOCAL_MODEL.bytes))));
+      await new Promise((r) => setTimeout(r, this.pollMs));
     }
   }
 

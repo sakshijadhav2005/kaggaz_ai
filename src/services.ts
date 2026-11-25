@@ -80,6 +80,7 @@ export async function initServices(): Promise<Services> {
 
   // One Gemma 4 for everything: hosted when online with a key, on the device otherwise.
   const local = new OnDeviceLlmClient();
+  local.resumePending();
   const llm = new RoutedLlmClient(new GemmaLlmClient(), local, () => isOnline() && hostedAllowed());
 
   const scheduler = new LocalReminderScheduler();

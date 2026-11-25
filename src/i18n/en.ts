@@ -134,7 +134,8 @@ export const en = {
     browser: 'Gemma 4 runs on the device in the Android app. In a browser the online model is used.',
     downloading: (p: number) => `Downloading Gemma 4… ${p}%`,
     progressLabel: 'Gemma 4 download progress',
-    keepWifi: 'The download carries on if you switch tabs. Keep the phone on Wi-Fi.',
+    keepWifi: 'The download carries on in the background, even if you close the app or lock the phone. Progress is in your notifications.',
+    paused: { network: 'Waiting for internet…', wifi: 'Waiting for Wi-Fi…', retry: 'Connection dropped, retrying…', paused: 'Paused, it will continue shortly…' } as Record<string, string>,
     noStart: 'Gemma 4 is downloaded but could not start.',
     starting: 'Starting…',
     downloadAgain: 'Download again',
@@ -204,6 +205,7 @@ export const en = {
     found: 'Here is what I found in your files:',
     general: 'General answer (not from your files):',
     mobileNumber: (number: string) => `Mobile number: ${number}.`,
+    noMobileOnFile: (name: string) => `I found ${name} in your files, but no mobile number is printed next to it. Many Aadhaar cards do not show a mobile number; if this one does, the scan may be too blurry to read.`,
   },
 
   /** Errors from the PDF tools, by code (src/pdf/pdfErrors.ts). The English table lives there so the worker can use it. */

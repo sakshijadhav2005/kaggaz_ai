@@ -1,6 +1,7 @@
 import { en, type Strings } from '../i18n/en';
 import type { SnippetHit } from '../search/snippets';
 import { findMobileNumber, isMobileNumberQuestion, mobileNumberSubject, NOT_FOUND, type Answer, type Citation } from './answerer';
+import { tokenize } from '../search/folderSearch';
 
 export interface ContentSearchDeps {
   online: boolean;
@@ -50,7 +51,22 @@ export async function searchContent(q: string, d: ContentSearchDeps, m: Strings[
       passages = await d.allPassages();
       match = findMobileNumber(q, passages);
     }
-    if (!match) return { text: m.notFound };
+    if (!match) {
+      // Say which file mentions the person, so a card with no number (or an unreadable one)
+      // is not mistaken for a card the app never saw.
+      const words = subject.split(' ');
+      const named = subject
+        ? (await d.findPassages(subject)).find((p) => {
+          const found = new Set(tokenize(`${p.fileName} ${p.text}`));
+          return words.every((w) => found.has(w));
+        })
+        : undefined;
+      if (!named) return { text: m.notFound };
+      return {
+        text: m.noMobileOnFile(subject.replace(/\b\w/g, (c) => c.toUpperCase())),
+        citations: [{ fileId: named.fileId, fileName: named.fileName, folder: named.folder, page: named.page }],
+      };
+    }
     const source = passages[match.passageIndex];
     return {
       text: m.mobileNumber(match.number),
