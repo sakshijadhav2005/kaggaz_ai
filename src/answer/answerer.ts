@@ -13,19 +13,27 @@ export const ANSWER_PROMPT =
 
 const MOBILE_WORDS = new Set(['mobile', 'cell', 'cellular', 'phone', 'telephone', 'मोबाइल', 'मोबाईल', 'फोन', 'फ़ोन']);
 const CONTACT_WORDS = new Set(['contact', 'संपर्क']);
-const NUMBER_WORDS = new Set(['number', 'no', 'num', 'नंबर', 'नम्बर']);
+const NUMBER_WORDS = new Set(['number', 'numbers', 'no', 'num', 'नंबर', 'नम्बर']);
 const MOBILE_QUERY_WORDS = new Set([
   ...MOBILE_WORDS, ...CONTACT_WORDS, ...NUMBER_WORDS,
-  'what', 'whats', 'is', 'the', 'of', 'for', 'in', 'on', 'from', 'my', 'his', 'her', 'their',
+  'what', 'whats', 'is', 'the', 'a', 'an', 'of', 'for', 'in', 'on', 'at', 'from', 'my', 'his', 'her', 'their',
+  'this', 'that', 'it', 'its', 'there', 'which', 'are', 'was', 'and', 'to', 'i', 'can', 'you',
   'person', 'particular', 'specific', 'individual', 'someone', 'anyone', 'customer', 'employee', 'applicant',
-  'please', 'tell', 'me', 'find', 'give', 'show', 'get', 'document', 'file', 'resume', 'card', 'mobile',
-  'phone', 'named', 'called', 'with', 'whose', 'name',
-  'aadhaar', 'aadhar', 'uidai', 'pan', 'bill', 'receipt', 'invoice', 'medical', 'study', 'notes',
+  'please', 'tell', 'me', 'find', 'give', 'show', 'get', 'fetch', 'extract', 'read', 'check', 'search', 'want',
+  'document', 'documents', 'file', 'files', 'resume', 'card', 'cards', 'mobile', 'mob',
+  'phone', 'named', 'called', 'with', 'whose', 'name', 'details', 'detail', 'info', 'information',
+  'present', 'written', 'mentioned', 'printed', 'given', 'available', 'saved', 'stored', 'inside',
+  'upload', 'uploaded', 'added', 'pic', 'pics', 'picture', 'photo', 'image', 'img', 'scan', 'scanned', 'copy',
+  'aadhaar', 'aadhar', 'adhar', 'adhaar', 'aadar', 'uidai', 'uid', 'pan', 'voter', 'license',
+  'licence', 'driving', 'passport', 'ration', 'id', 'bill', 'receipt', 'invoice', 'medical', 'study', 'notes',
   'pdf', 'cv', 'identity', 'attached', 'mr', 'mrs', 'ms', 'dr',
-  'क्या', 'है', 'का', 'की', 'के', 'मेरा', 'मेरी', 'उसका', 'उसकी', 'बताएं', 'दस्तावेज़', 'इस', 'उस', 'व्यक्ति',
+  'क्या', 'है', 'का', 'की', 'के', 'में', 'पर', 'मेरा', 'मेरी', 'उसका', 'उसकी', 'बताएं', 'बताओ', 'दस्तावेज़',
+  'इस', 'उस', 'व्यक्ति', 'आधार', 'कार्ड', 'फोटो',
 ]);
-const MOBILE_LABEL = /(?:mobile|cell(?:ular)?|phone|telephone|contact|मोबाइल|मोबाईल|फोन|फ़ोन|संपर्क)/i;
-const MOBILE_NUMBER_PATTERN = /(^|[^\d])((?:(?:\+?91|0)[\s-]?)?[6-9](?:[\s-]?\d){9})(?![\s-]?\d)/g;
+/** Labels printed next to a mobile number, including the short forms found on ID cards ("Mob:", "Ph:", "M. No."). */
+const MOBILE_LABEL = /(?:mobile|\bmob\b|cell(?:ular)?|phone|\bph\b|\btel\b|telephone|contact|\bm\.?\s?no\b|मोबाइल|मोबाईल|फोन|फ़ोन|संपर्क)/i;
+/** Separators stay on one line: OCR puts the next field (often the Aadhaar number) on the next line. */
+const MOBILE_NUMBER_PATTERN = /(^|[^\d])((?:(?:\+?91|0)[ \t-]?)?[6-9](?:[ \t-]?\d){9})(?![ \t-]?\d)/g;
 
 export function isMobileNumberQuestion(question: string): boolean {
   const words = new Set(tokenize(question));
@@ -37,33 +45,68 @@ export function mobileNumberSubject(question: string): string {
   return tokenize(question).filter((word) => word.length > 1 && !MOBILE_QUERY_WORDS.has(word)).join(' ');
 }
 
-/** Returns the matching mobile number and passage index, or null if none is safely attributable. */
+interface MobileCandidate {
+  number: string;
+  /** Text around the number. */
+  context: string;
+  /** Text just before the number, where a "Mobile:" label would be. */
+  before: string;
+}
+
+function mobileCandidates(text: string): MobileCandidate[] {
+  const out: MobileCandidate[] = [];
+  for (const match of text.matchAll(MOBILE_NUMBER_PATTERN)) {
+    if (match.index === undefined) continue;
+    const digits = match[2].replace(/\D/g, '');
+    const number = digits.length === 12 && digits.startsWith('91')
+      ? digits.slice(2)
+      : digits.length === 11 && digits.startsWith('0')
+        ? digits.slice(1)
+        : digits;
+    if (number.length !== 10) continue;
+    const end = match.index + match[0].length;
+    out.push({
+      number,
+      context: text.slice(Math.max(0, match.index - 120), Math.min(text.length, end + 120)),
+      before: text.slice(Math.max(0, match.index - 30), end),
+    });
+  }
+  return out;
+}
+
+/**
+ * Returns the matching mobile number and passage index, or null if none is safely attributable.
+ *
+ * With a person's name in the question, a number qualifies when the name is printed near it, or
+ * (for ID cards, where the address sits between the name at the top and the number at the bottom)
+ * when the name is anywhere in the passage or file name, the number carries a mobile label, and it
+ * is the only mobile number in that passage, so a list of contacts never yields someone else's.
+ */
 export function findMobileNumber(
   question: string,
-  passages: ReadonlyArray<Pick<Passage, 'text'>>,
+  passages: ReadonlyArray<Pick<Passage, 'text'> & { fileName?: string }>,
 ): { number: string; passageIndex: number } | null {
   const subject = mobileNumberSubject(question).split(' ').filter(Boolean);
+  const hasSubject = (text: string) => {
+    const words = new Set(tokenize(text));
+    return subject.every((word) => words.has(word));
+  };
+  const found = passages.map((p) => mobileCandidates(p.text));
 
-  for (const [passageIndex, passage] of passages.entries()) {
-    for (const match of passage.text.matchAll(MOBILE_NUMBER_PATTERN)) {
-      if (match.index === undefined) continue;
-      const candidate = match[2];
-      const digits = candidate.replace(/\D/g, '');
-      const number = digits.length === 12 && digits.startsWith('91')
-        ? digits.slice(2)
-        : digits.length === 11 && digits.startsWith('0')
-          ? digits.slice(1)
-          : digits;
-      if (number.length !== 10) continue;
-
-      const start = Math.max(0, match.index - 120);
-      const end = Math.min(passage.text.length, match.index + match[0].length + 120);
-      const context = passage.text.slice(start, end);
-      const contextWords = new Set(tokenize(context));
-      if (subject.length > 0 && !subject.every((word) => contextWords.has(word))) continue;
-      if (subject.length === 0 && !MOBILE_LABEL.test(context)) continue;
-      return { number, passageIndex };
+  for (const [passageIndex, candidates] of found.entries()) {
+    for (const c of candidates) {
+      if (subject.length > 0 ? hasSubject(c.context) : MOBILE_LABEL.test(c.context)) {
+        return { number: c.number, passageIndex };
+      }
     }
+  }
+
+  if (subject.length === 0) return null;
+  for (const [passageIndex, candidates] of found.entries()) {
+    const passage = passages[passageIndex];
+    if (!hasSubject(`${passage.fileName ?? ''} ${passage.text}`)) continue;
+    const labelled = candidates.filter((c) => MOBILE_LABEL.test(c.before));
+    if (new Set(labelled.map((c) => c.number)).size === 1) return { number: labelled[0].number, passageIndex };
   }
   return null;
 }

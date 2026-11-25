@@ -178,6 +178,7 @@ export default function Chat({ onOpen, onTab }: { onOpen: OpenFn; onTab: (tab: A
         return answerer.ask(question);
       },
       findPassages: async (question) => searchSnippets(question, await db.searchableChunks()),
+      allPassages: () => db.searchableChunks(),
       askFromPassages: (question, hits) => answerer.askFromPassages(question, hits),
       general,
     }, strings().search);

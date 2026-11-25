@@ -11,6 +11,12 @@ export interface ContentSearchDeps {
   askHosted(q: string): Promise<Answer>;
   /** Plain word matching over every stored passage. Works offline. */
   findPassages(q: string): Promise<SnippetHit[]>;
+  /**
+   * Every stored passage. Used when looking up a mobile number, because the card's
+   * text often shares no words with the question (an Aadhaar's OCR text rarely says
+   * "aadhaar" or "number"), so word matching never offers it.
+   */
+  allPassages?(): Promise<Array<Pick<SnippetHit, 'fileId' | 'fileName' | 'folder' | 'page' | 'text'>>>;
   /** A written answer from the given passages (uses on-device Gemma 4 when offline). */
   askFromPassages(q: string, hits: SnippetHit[]): Promise<Answer>;
   general(q: string): Promise<string>;
@@ -32,11 +38,16 @@ export interface ContentResult {
 /** [m] is the message text in the user's language; English by default. */
 export async function searchContent(q: string, d: ContentSearchDeps, m: Strings['search'] = en.search): Promise<ContentResult> {
   if (isMobileNumberQuestion(q)) {
-    let passages = await d.findPassages(q);
+    let passages: Array<Pick<SnippetHit, 'fileId' | 'fileName' | 'folder' | 'page' | 'text'>> = await d.findPassages(q);
     let match = findMobileNumber(q, passages);
     const subject = mobileNumberSubject(q);
     if (!match && subject) {
       passages = await d.findPassages(subject);
+      match = findMobileNumber(q, passages);
+    }
+    if (!match && d.allPassages) {
+      // findMobileNumber still requires the person's name, or a mobile label, beside the number.
+      passages = await d.allPassages();
       match = findMobileNumber(q, passages);
     }
     if (!match) return { text: m.notFound };

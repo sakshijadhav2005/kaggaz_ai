@@ -500,6 +500,40 @@ describe('searching file content', () => {
     expect(queries).toEqual(['What is the mobile number of Sakshi Jadhav?', 'sakshi jadhav']);
   });
 
+  it.each([
+    'mobile number on adhar card',
+    'aadhaar card mobile number',
+    'what is mobile number in aadhaar card pic',
+    'fetch mobile number from uploaded aadhar card image',
+  ])('finds the mobile number on an ID card photo whose text shares no words with "%s"', async (q) => {
+    const card = hit('IMG_2025.jpg', 'Government of India\nSakshi Jadhav\n4567 8912 3456\nMob: 98765 43210\nआधार');
+    const r = await searchContent(q, deps({ findPassages: async () => [], allPassages: async () => [card] }));
+    expect(r.text).toBe('Mobile number: 9876543210.');
+    expect(r.citations?.[0].fileName).toBe('IMG_2025.jpg');
+  });
+
+  it('finds a mobile number by the name on the card when the address sits between them', async () => {
+    const card = hit('eaadhaar.jpg', 'Unique Identification Authority of India\nTo\nSakshi Jadhav\n' +
+      'D/O Ramesh Jadhav, Flat 12, Shivaji Nagar, Near Ganesh Temple, Kothrud, Pune, Maharashtra - 411038\n' +
+      'VTC: Pune, District: Pune, State: Maharashtra\nMobile: 9876543210\n4567 8912 3456');
+    const r = await searchContent('sakshi jadhav mobile no', deps({ findPassages: async () => [], allPassages: async () => [card] }));
+    expect(r.text).toBe('Mobile number: 9876543210.');
+  });
+
+  it('does not give a named person someone else\'s number from a list of contacts', async () => {
+    const list = hit('contacts.pdf', 'Sakshi Jadhav, Flat 12, Shivaji Nagar, Kothrud, Pune, Maharashtra 411038, India. Emergency contacts follow.\n' +
+      'Rahul Patil, House 45, MG Road, Camp Area, Nashik, Maharashtra 422001, India. Office reception desk.\nMobile: 98220 11223\n' +
+      'Asha More, Plot 7, Station Road, Satara, Maharashtra 415001, India. Branch office reception.\nMobile: 99887 76655');
+    const r = await searchContent('mobile number of sakshi jadhav', deps({ findPassages: async () => [list], allPassages: async () => [list] }));
+    expect(r.text).toBe(NOT_FOUND);
+  });
+
+  it('does not take an unlabelled number from an ID card as its mobile number', async () => {
+    const card = hit('IMG_2025.jpg', 'Government of India\nRahul Patil\n4567 8912 3456\nRef 9876543210');
+    const r = await searchContent('mobile number on adhar card', deps({ findPassages: async () => [], allPassages: async () => [card] }));
+    expect(r.text).toBe(NOT_FOUND);
+  });
+
   it('offline with Gemma 4 on the device: writes an answer from the matching passages', async () => {
     const r = await searchContent('q', deps({ online: false, localReady: true }));
     expect(log).toEqual(['passages', 'local']);
