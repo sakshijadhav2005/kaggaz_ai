@@ -61,6 +61,7 @@ Without a key the app still imports, OCRs, sorts by rules and searches by folder
 Online, the app uses the hosted Gemma 4 (31B). With no connection or key, or if a hosted call fails, it uses **Gemma 4 E2B running on the phone** (LiteRT-LM, through `@capgo/capacitor-llm`). It is used for sorting unmatched files, written answers, general answers and file-name suggestions.
 
 - Android app, Settings, **Download Gemma 4 E2B**. The model is about 2.6 GB, so it downloads on request (use Wi-Fi) instead of shipping inside the app.
+- The Android downloader uses larger buffered reads and resumes an interrupted transfer from the partial file when the server supports byte ranges.
 - Offline answers work from the best matching passages (plain word matching), because the embedding model is online-only. Answers cite the file and page. The on-device model has a small context window, so it is given at most 3 passages.
 - It cannot read images or audio; the OCR fallback that sends a picture to Gemma, and audio transcription, stay online-only. ML Kit and Tesseract still read images offline.
 - In a browser there is no on-device model; Settings says so.
