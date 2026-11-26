@@ -32,8 +32,12 @@ const MOBILE_QUERY_WORDS = new Set([
 ]);
 /** Labels printed next to a mobile number, including the short forms found on ID cards ("Mob:", "Ph:", "M. No."). */
 const MOBILE_LABEL = /(?:mobile|\bmob\b|cell(?:ular)?|phone|\bph\b|\btel\b|telephone|contact|\bm\.?\s?no\b|मोबाइल|मोबाईल|फोन|फ़ोन|संपर्क)/i;
-/** Separators stay on one line: OCR puts the next field (often the Aadhaar number) on the next line. */
-const MOBILE_NUMBER_PATTERN = /(^|[^\d])((?:(?:\+?91|0)[ \t-]?)?[6-9](?:[ \t-]?\d){9})(?![ \t-]?\d)/g;
+/**
+ * Separators stay on one line: OCR usually puts the next field (often the Aadhaar number) on the next
+ * line. When it puts the Aadhaar number on the same line instead ("98765 43210 4567 8912 3456"), a
+ * following group in Aadhaar form (4 4 4 digits) does not count as part of the mobile number.
+ */
+const MOBILE_NUMBER_PATTERN = /(^|[^\d])((?:(?:\+?91|0)[ \t-]?)?[6-9](?:[ \t-]?\d){9})(?!-?\d|[ \t]\d(?!\d{3}[ \t]\d{4}[ \t]\d{4}(?!\d)))/g;
 
 export function isMobileNumberQuestion(question: string): boolean {
   const words = new Set(tokenize(question));
@@ -148,6 +152,13 @@ export function findMobileNumber(
     if (!hasSubject(`${passage.fileName ?? ''} ${passage.text}`)) continue;
     const labelled = candidates.filter((c) => MOBILE_LABEL.test(c.before));
     if (new Set(labelled.map((c) => c.number)).size === 1) return { number: labelled[0].number, passageIndex };
+    // OCR can put the "Mobile" label further from the number, and some cards print a phone icon
+    // instead. The person's card holding a single mobile-looking number still answers, when that
+    // number has a label somewhere around it or stands alone on its line ("Ref 98..." does not).
+    const only = new Set(candidates.map((c) => c.number)).size === 1
+      ? candidates.find((c) => c.alone || MOBILE_LABEL.test(c.context))
+      : undefined;
+    if (only) return { number: only.number, passageIndex };
   }
   return null;
 }

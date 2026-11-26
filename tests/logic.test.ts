@@ -218,6 +218,22 @@ describe('chunker', () => {
     expect(findMobileNumber('mobile number on id card', [iconCard, { text: 'Rahul\n9123456780' }])).toBeNull();
   });
 
+  it("finds a named person's number when the label is far away, missing, or the Aadhaar number shares its line", () => {
+    const q = 'mobile number of Sakshi Jadhav';
+    const address = 'W/O Some Person, House 12, Long Street Name, Near Big Temple, Shivaji Nagar, Pune, Maharashtra 411005';
+    // Label printed in another block, well before the number; name over 120 characters away.
+    expect(findMobileNumber(q, [{ text: `Sakshi Jadhav\nMobile No:\n${address}\n${address}\n9876543210` }])?.number).toBe('9876543210');
+    // Phone icon instead of a label: number alone on its line.
+    expect(findMobileNumber(q, [{ text: `Sakshi Jadhav\n${address}\n${address}\n© 9876543210` }])?.number).toBe('9876543210');
+    // Aadhaar number on the same line as the mobile number.
+    expect(findMobileNumber(q, [{ text: `Sakshi Jadhav\n${address}\n${address}\nMob: 98765 43210 4567 8912 3456` }])?.number).toBe('9876543210');
+    // Still refused: another label on the line, or two candidate numbers on the card.
+    expect(findMobileNumber(q, [{ text: `Sakshi Jadhav\n${address}\n${address}\nRef 9876543210` }])).toBeNull();
+    expect(findMobileNumber(q, [{ text: `Sakshi Jadhav\n${address}\n${address}\n9876543210\n9123456780` }])).toBeNull();
+    // An Aadhaar number starting 6-9 is never read as a mobile number.
+    expect(findMobileNumber(q, [{ text: 'Sakshi Jadhav\n9123 4567 8901' }])).toBeNull();
+  });
+
   it('treats "mob number" and "extract mobile number" as number lookups, not commands', () => {
     expect(isMobileNumberQuestion('mob number')).toBe(true);
     expect(isMobileNumberLookup('extract mobile number')).toBe(true);
