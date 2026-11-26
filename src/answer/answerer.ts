@@ -11,7 +11,7 @@ export const ANSWER_PROMPT =
   'Answer in the language of the question. If the answer is not in the excerpts, say ' +
   `"${NOT_FOUND}" Never invent numbers or dates.`;
 
-const MOBILE_WORDS = new Set(['mobile', 'cell', 'cellular', 'phone', 'telephone', 'मोबाइल', 'मोबाईल', 'फोन', 'फ़ोन']);
+const MOBILE_WORDS = new Set(['mobile', 'mob', 'cell', 'cellular', 'phone', 'telephone', 'मोबाइल', 'मोबाईल', 'फोन', 'फ़ोन']);
 const CONTACT_WORDS = new Set(['contact', 'संपर्क']);
 const NUMBER_WORDS = new Set(['number', 'numbers', 'no', 'num', 'नंबर', 'नम्बर']);
 const MOBILE_QUERY_WORDS = new Set([
@@ -41,6 +41,15 @@ export function isMobileNumberQuestion(question: string): boolean {
     ([...CONTACT_WORDS].some((word) => words.has(word)) && [...NUMBER_WORDS].some((word) => words.has(word)));
 }
 
+/**
+ * A mobile-number question that asks for the number itself ("extract mobile number"), so it is
+ * answered from the files rather than taken as a command ("extract" also names a PDF tool).
+ */
+export function isMobileNumberLookup(question: string): boolean {
+  const words = new Set(tokenize(question));
+  return isMobileNumberQuestion(question) && [...NUMBER_WORDS].some((word) => words.has(word));
+}
+
 export function mobileNumberSubject(question: string): string {
   return tokenize(question).filter((word) => word.length > 1 && !MOBILE_QUERY_WORDS.has(word)).join(' ');
 }
@@ -51,6 +60,8 @@ interface MobileCandidate {
   context: string;
   /** Text just before the number, where a "Mobile:" label would be. */
   before: string;
+  /** No letters share the number's line, so it carries no other label ("Ref", "ID", "Roll No"). */
+  alone: boolean;
 }
 
 /** Letters OCR often reads in place of digits on printed cards. */
@@ -62,6 +73,8 @@ const OCR_DIGITS: Record<string, string> = { O: '0', o: '0', D: '0', I: '1', l: 
  * they are. Every replacement is one character for one, so positions in the text do not move.
  */
 export function fixOcrDigits(text: string): string {
+  // Devanagari digits (the Hindi OCR model may return them) become 0-9, one character for one.
+  text = text.replace(/[०-९]/g, (d) => String(d.charCodeAt(0) - 0x966));
   return text.replace(/[\dODIl|SBZo]+/g, (run) => {
     const digits = run.replace(/\D/g, '').length;
     return digits >= 2 && digits > run.length - digits ? run.replace(/[ODIl|SBZo]/g, (c) => OCR_DIGITS[c]) : run;
@@ -81,7 +94,12 @@ function mobileCandidates(text: string): MobileCandidate[] {
         : digits;
     if (number.length !== 10) continue;
     const end = match.index + match[0].length;
+    const start = match.index + match[1].length;
+    const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+    const next = text.indexOf('\n', end);
+    const rest = text.slice(lineStart, start) + text.slice(end, next < 0 ? text.length : next);
     out.push({
+      alone: !/\p{L}/u.test(rest),
       number,
       context: text.slice(Math.max(0, match.index - 120), Math.min(text.length, end + 120)),
       before: text.slice(Math.max(0, match.index - 30), end),
@@ -117,7 +135,14 @@ export function findMobileNumber(
     }
   }
 
-  if (subject.length === 0) return null;
+  if (subject.length === 0) {
+    // No label anywhere near it (some cards print a phone icon instead of "Mobile"): accept a
+    // number only when it stands on its own line, with no other label, and it is the one
+    // mobile-looking number in the passages searched, so it cannot be someone else's.
+    const all = found.flatMap((candidates, passageIndex) => candidates.map((c) => ({ ...c, passageIndex })));
+    const only = new Set(all.map((c) => c.number)).size === 1 ? all.find((c) => c.alone) : undefined;
+    return only ? { number: only.number, passageIndex: only.passageIndex } : null;
+  }
   for (const [passageIndex, candidates] of found.entries()) {
     const passage = passages[passageIndex];
     if (!hasSubject(`${passage.fileName ?? ''} ${passage.text}`)) continue;

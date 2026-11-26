@@ -4,7 +4,7 @@ import { Fragment, useRef, useState, type FormEvent } from 'react';
 import { runAgent, runConfirmed, type Turn } from '../agent/agent';
 import type { ActionContext, AppTab } from '../agent/registry';
 import { actionsFor, matchSkills } from '../agent/skills';
-import type { Citation } from '../answer/answerer';
+import { isMobileNumberLookup, type Citation } from '../answer/answerer';
 import { searchContent } from '../answer/contentSearch';
 import { exportStoredFile } from '../core/fileExport';
 import { listen, stopListening, VoiceError, voiceSupported } from '../core/voice';
@@ -195,7 +195,8 @@ export default function Chat({ onOpen, onTab }: { onOpen: OpenFn; onTab: (tab: A
     setBusy(true);
     try {
       // A command, or the answer to a question the command agent just asked ("the second one").
-      const skills = matchSkills(q);
+      // "Extract mobile number" is a lookup, not the PDF tool that "extract" also names.
+      const skills = isMobileNumberLookup(q) ? [] : matchSkills(q);
       const lastReply = [...earlier].reverse().find((m) => !m.user);
       const followUp = lastReply?.agent?.asked && !isQuestion(q) ? lastReply.agent.actionIds : null;
       if (skills.length > 0 || followUp) push(await runCommand(q, skills.length > 0 ? actionsFor(skills) : followUp!, earlier));

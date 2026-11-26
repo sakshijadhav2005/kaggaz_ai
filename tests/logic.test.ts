@@ -5,7 +5,7 @@ import { judge } from '../src/eval/qaEval';
 import { OcrExtractor } from '../src/extract/ocrExtractor';
 import { FallbackEngine, type OcrEngine } from '../src/extract/ocrEngine';
 import { pickBestText } from '../src/extract/textUtils';
-import { findMobileNumber, fixOcrDigits } from '../src/answer/answerer';
+import { findMobileNumber, fixOcrDigits, isMobileNumberLookup, isMobileNumberQuestion } from '../src/answer/answerer';
 import { chunkSegments } from '../src/index/chunker';
 import { topK } from '../src/index/vector';
 import type { Classifier } from '../src/interfaces';
@@ -209,6 +209,19 @@ describe('chunker', () => {
     const card = 'Sakshi Jadhav\nMob: 98765 4321O\n4567 8912 3456';
     expect(findMobileNumber('mobile number of Sakshi Jadhav', [{ text: card }])?.number).toBe('9876543210');
     expect(findMobileNumber('mobile number on aadhar card', [{ text: 'Mobile: 9B765 432I0' }])?.number).toBe('9876543210');
+  });
+
+  it('reads Hindi digits and a lone unlabelled number, but never guesses between two', () => {
+    expect(findMobileNumber('मोबाइल नंबर', [{ text: 'मोबाइल: ९८७६५४३२१०' }])?.number).toBe('9876543210');
+    const iconCard = { text: 'Sakshi Jadhav\nDOB 01/01/2000\n9876543210\nPune 411001' };
+    expect(findMobileNumber('mobile number on id card', [iconCard])?.number).toBe('9876543210');
+    expect(findMobileNumber('mobile number on id card', [iconCard, { text: 'Rahul\n9123456780' }])).toBeNull();
+  });
+
+  it('treats "mob number" and "extract mobile number" as number lookups, not commands', () => {
+    expect(isMobileNumberQuestion('mob number')).toBe(true);
+    expect(isMobileNumberLookup('extract mobile number')).toBe(true);
+    expect(isMobileNumberLookup('merge my mobile bill pdfs')).toBe(false);
   });
 });
 
