@@ -5,7 +5,7 @@ import { judge } from '../src/eval/qaEval';
 import { OcrExtractor } from '../src/extract/ocrExtractor';
 import { FallbackEngine, type OcrEngine } from '../src/extract/ocrEngine';
 import { pickBestText } from '../src/extract/textUtils';
-import { findMobileNumber } from '../src/answer/answerer';
+import { findMobileNumber, fixOcrDigits } from '../src/answer/answerer';
 import { chunkSegments } from '../src/index/chunker';
 import { topK } from '../src/index/vector';
 import type { Classifier } from '../src/interfaces';
@@ -200,6 +200,15 @@ describe('chunker', () => {
     const [hit] = searchSnippets('sakshi', [{ fileId: 'f', fileName: 'IMG.jpg', folder: 'Aadhaar', page: 1, text: chunk.text }]);
     expect(findMobileNumber('mobile number of Sakshi Jadhav', [hit])?.number).toBe('9876543210');
     expect(hit.snippet).not.toContain('\n');
+  });
+
+  it('reads a mobile number with OCR letter-for-digit mistakes, without touching words', () => {
+    expect(fixOcrDigits('Mob: 98765 4321O')).toBe('Mob: 98765 43210');
+    expect(fixOcrDigits('Ph: 9S765 432l0')).toBe('Ph: 95765 43210');
+    expect(fixOcrDigits('Mob SOIL Bold IS 2O')).toBe('Mob SOIL Bold IS 2O'); // one real digit: too little to go on
+    const card = 'Sakshi Jadhav\nMob: 98765 4321O\n4567 8912 3456';
+    expect(findMobileNumber('mobile number of Sakshi Jadhav', [{ text: card }])?.number).toBe('9876543210');
+    expect(findMobileNumber('mobile number on aadhar card', [{ text: 'Mobile: 9B765 432I0' }])?.number).toBe('9876543210');
   });
 });
 

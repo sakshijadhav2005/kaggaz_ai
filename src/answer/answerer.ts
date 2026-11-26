@@ -53,9 +53,25 @@ interface MobileCandidate {
   before: string;
 }
 
+/** Letters OCR often reads in place of digits on printed cards. */
+const OCR_DIGITS: Record<string, string> = { O: '0', o: '0', D: '0', I: '1', l: '1', '|': '1', S: '5', B: '8', Z: '2' };
+
+/**
+ * Fixes OCR misreads inside numbers ("98765 4321O" -> "98765 43210"). Only a run with no spaces
+ * that is mostly real digits (at least two) is changed, so words such as "Mob" or "SOIL" stay as
+ * they are. Every replacement is one character for one, so positions in the text do not move.
+ */
+export function fixOcrDigits(text: string): string {
+  return text.replace(/[\dODIl|SBZo]+/g, (run) => {
+    const digits = run.replace(/\D/g, '').length;
+    return digits >= 2 && digits > run.length - digits ? run.replace(/[ODIl|SBZo]/g, (c) => OCR_DIGITS[c]) : run;
+  });
+}
+
 function mobileCandidates(text: string): MobileCandidate[] {
   const out: MobileCandidate[] = [];
-  for (const match of text.matchAll(MOBILE_NUMBER_PATTERN)) {
+  // Match on the repaired text; context comes from the original (same positions) for name matching.
+  for (const match of fixOcrDigits(text).matchAll(MOBILE_NUMBER_PATTERN)) {
     if (match.index === undefined) continue;
     const digits = match[2].replace(/\D/g, '');
     const number = digits.length === 12 && digits.startsWith('91')
