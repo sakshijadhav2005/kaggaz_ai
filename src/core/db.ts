@@ -217,6 +217,16 @@ export class Db implements AnswerSource {
     });
   }
 
+  /** The page number stored on a file's first chunk (page is not encrypted, so nothing is decrypted). */
+  async firstChunkPage(fileId: string): Promise<number | undefined> {
+    return (await this.d.chunks.where('fileId').equals(fileId).first())?.page;
+  }
+
+  /** A file's chunks in stored order, decrypted. */
+  async chunksForFile(fileId: string): Promise<Chunk[]> {
+    return this.decChunks(await this.d.chunks.where('fileId').equals(fileId).toArray());
+  }
+
   async replaceChunks(fileId: string, chunks: Chunk[]) {
     const rows = await Promise.all(chunks.map(({ id: _id, ...c }) => this.encChunk(c)));
     return this.d.transaction('rw', this.d.chunks, async () => {

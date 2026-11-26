@@ -26,8 +26,11 @@ export interface SnippetHit {
 /** A word and its singular, so "skills" finds "skill" and the reverse. */
 export const variantsOf = (t: string): string[] => (t.length > 3 && t.endsWith('s') ? [t, t.slice(0, -1)] : [t]);
 
-export function makeSnippet(text: string, tokens: string[], width = 400): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
+/** [keepLines] keeps single line breaks, for excerpts read by code (the mobile-number finder) rather than shown. */
+export function makeSnippet(text: string, tokens: string[], width = 400, keepLines = false): string {
+  const flat = keepLines
+    ? text.replace(/[ \t]+/g, ' ').replace(/ ?\n\s*/g, '\n').trim()
+    : text.replace(/\s+/g, ' ').trim();
   const lower = flat.toLowerCase();
   let at = -1;
   for (const v of tokens.flatMap(variantsOf)) {
@@ -54,7 +57,7 @@ export function searchSnippets(query: string, chunks: SearchableChunk[], opts: {
     const hay = `${c.fileName} ${c.text}`.toLowerCase();
     const matched = tokens.filter((t) => variantsOf(t).some((v) => hay.includes(v)));
     if (matched.length >= min) {
-      hits.push({ fileId: c.fileId, fileName: c.fileName, folder: c.folder, page: c.page, snippet: makeSnippet(c.text, matched), text: makeSnippet(c.text, matched, 1500), score: matched.length, matched });
+      hits.push({ fileId: c.fileId, fileName: c.fileName, folder: c.folder, page: c.page, snippet: makeSnippet(c.text, matched), text: makeSnippet(c.text, matched, 1500, true), score: matched.length, matched });
     }
   }
   hits.sort((a, b) => b.score - a.score);

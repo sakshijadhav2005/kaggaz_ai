@@ -5,6 +5,7 @@ import { judge } from '../src/eval/qaEval';
 import { OcrExtractor } from '../src/extract/ocrExtractor';
 import { FallbackEngine, type OcrEngine } from '../src/extract/ocrEngine';
 import { pickBestText } from '../src/extract/textUtils';
+import { findMobileNumber } from '../src/answer/answerer';
 import { chunkSegments } from '../src/index/chunker';
 import { topK } from '../src/index/vector';
 import type { Classifier } from '../src/interfaces';
@@ -187,6 +188,18 @@ describe('chunker', () => {
     expect(chunks.filter((c) => c.page === 1)).toHaveLength(3);
     expect(chunks.at(-1)).toMatchObject({ page: 2, text: 'short page' });
     expect(chunks[1].text.startsWith('w350 ')).toBe(true); // 50 words of overlap
+  });
+
+  it("keeps line breaks so a card's mobile number is still found after indexing", () => {
+    const ocr = 'Government of India\nSakshi Jadhav\nMob: 98765 43210\n4567 8912 3456\nआधार';
+    const [chunk] = chunkSegments([{ page: 1, text: ocr, language: 'en', confidence: 1, method: 'ocr_device' }]);
+    expect(chunk.text).toBe(ocr);
+    expect(findMobileNumber('mobile number on aadhar card', [{ text: chunk.text }])?.number).toBe('9876543210');
+    expect(findMobileNumber('mobile number of Sakshi Jadhav', [{ text: chunk.text }])?.number).toBe('9876543210');
+    // The excerpt handed to the finder by keyword search keeps the line breaks too.
+    const [hit] = searchSnippets('sakshi', [{ fileId: 'f', fileName: 'IMG.jpg', folder: 'Aadhaar', page: 1, text: chunk.text }]);
+    expect(findMobileNumber('mobile number of Sakshi Jadhav', [hit])?.number).toBe('9876543210');
+    expect(hit.snippet).not.toContain('\n');
   });
 });
 

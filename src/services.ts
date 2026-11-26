@@ -19,7 +19,7 @@ import { OcrExtractor } from './extract/ocrExtractor';
 import { FallbackEngine } from './extract/ocrEngine';
 import { PdfExtractor } from './extract/pdfExtractor';
 import { TesseractEngine } from './extract/tesseractEngine';
-import { Indexer } from './index/indexer';
+import { Indexer, rechunkImages, rechunkPdfs } from './index/indexer';
 import type { ReminderScheduler } from './interfaces';
 import { GemmaLlmClient, GeminiEmbeddingProvider, GeminiTranscriber, hostedAllowed } from './llm/gemini';
 import { OnDeviceLlmClient } from './llm/onDevice';
@@ -77,6 +77,8 @@ export async function initServices(): Promise<Services> {
   setConsentAudit((event, details) => db.appendAudit(event, details));
   const embedder = new GeminiEmbeddingProvider();
   const indexer = new Indexer(db, embedder);
+  // Images indexed before chunks kept line breaks: rebuild them so mobile numbers on cards are found.
+  await rechunkImages(db, indexer).catch((e) => console.error('Could not re-index images:', e));
 
   // One Gemma 4 for everything: hosted when online with a key, on the device otherwise.
   const local = new OnDeviceLlmClient();
@@ -149,5 +151,11 @@ export async function initServices(): Promise<Services> {
   };
   // Catch up on chunks that were imported offline.
   void indexer.embedMissing();
+  // PDFs indexed before chunks kept line breaks: read again in the background, on the device only
+  // (no hosted OCR fallback, so no file content leaves the phone), then embed whatever changed.
+  const offlinePdf = new PdfExtractor(read, new OcrExtractor(read, () => false, engine));
+  void rechunkPdfs(db, offlinePdf)
+    .then((n) => (n > 0 ? indexer.embedMissing() : undefined))
+    .catch((e) => console.error('Could not re-index PDFs:', e));
   return instance;
 }

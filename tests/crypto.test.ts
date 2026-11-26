@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { FieldCipher, isEncryptedBytes, isEncryptedString } from '../src/core/crypto';
 import { Db } from '../src/core/db';
+import { Indexer, rechunkImages, rechunkPdfs } from '../src/index/indexer';
 import type { StoredFile } from '../src/models';
 
 const newCipher = () => FieldCipher.fromRawKey(FieldCipher.generateRawKey());
@@ -121,5 +122,47 @@ describe('Db encryption at rest', () => {
     expect((await db.chunksWithEmbeddings())[0].embedding).toEqual([1, 0]);
     expect((await db.records())[0]).toMatchObject({ vendor: 'Kirana', amount: 80 });
     expect((await db.reminders())[0].title).toBe('Plain title');
+  });
+});
+
+describe('image re-index', () => {
+  it('rebuilds flattened image chunks from the saved text, keeping line breaks, and leaves PDFs alone', async () => {
+    const db = new Db(await newCipher(), `rechunk-${Math.random()}`);
+    const card = 'Sakshi Jadhav\nMob: 98765 43210\n4567 8912 3456';
+    await db.insertFile(file('img', { type: 'image', name: 'IMG.jpg', text: card }));
+    await db.insertFile(file('pdf', { text: 'line one\nline two' }));
+    await db.replaceChunks('img', [{ fileId: 'img', text: card.replace(/\n/g, ' '), page: 1, language: 'en', embedding: [0.1] }]);
+    await db.replaceChunks('pdf', [{ fileId: 'pdf', text: 'line one line two', page: 3, language: 'en' }]);
+
+    const embedder = { embed: async () => { throw new Error('offline'); } };
+    expect(await rechunkImages(db, new Indexer(db, embedder as never))).toBe(1);
+
+    const chunks = await db.searchableChunks();
+    expect(chunks.find((c) => c.fileId === 'img')).toMatchObject({ text: card, page: 1 });
+    expect(chunks.find((c) => c.fileId === 'pdf')).toMatchObject({ text: 'line one line two', page: 3 });
+    expect(await db.chunksWithEmbeddings()).toEqual([]); // stale vector dropped, rebuilt by embedMissing
+  });
+
+  it('restores line breaks in PDF pages only where the re-read text matches word for word', async () => {
+    const db = new Db(await newCipher(), `rechunk-pdf-${Math.random()}`);
+    await db.insertFile(file('scan', { text: 'x' }));
+    await db.insertFile(file('edited', { text: 'My note\nMob: 98765 43210\n4567 8912 3456' }));
+    await db.replaceChunks('scan', [
+      { fileId: 'scan', text: 'Mob: 98765 43210 4567 8912 3456', page: 1, language: 'en', embedding: [0.1] },
+      { fileId: 'scan', text: 'old reading of page two', page: 2, language: 'en', embedding: [0.2] },
+    ]);
+    await db.replaceChunks('edited', [{ fileId: 'edited', text: 'My note Mob: 98765 43210 4567 8912 3456', language: 'en' }]);
+
+    const seg = (page: number, text: string) => ({ page, text, language: 'en', confidence: 1, method: 'ocr_device' as const });
+    const pdf = {
+      canHandle: () => true,
+      extract: async () => [seg(1, 'Mob: 98765 43210\n4567 8912 3456'), seg(2, 'a different reading')],
+    };
+    expect(await rechunkPdfs(db, pdf)).toBe(2);
+
+    const scan = await db.chunksForFile('scan');
+    expect(scan.map((c) => [c.page, c.text])).toEqual([[1, 'Mob: 98765 43210\n4567 8912 3456'], [2, 'old reading of page two']]);
+    expect(scan[1].embedding?.[0]).toBeCloseTo(0.2); // untouched page keeps its vector
+    expect((await db.chunksForFile('edited'))[0].text).toBe('My note\nMob: 98765 43210\n4567 8912 3456');
   });
 });
